@@ -1,4 +1,4 @@
-# MK3 + FR3D Addon
+﻿# MK3 + FR3D Addon
 
 Public firmware for the **Desktop Filament Extruder MK3**, with **FR3D Addon** modifications by **Claudio Dadone**.
 
@@ -13,6 +13,7 @@ Based on **MACKEREL** (Marlin-derived filament extruder firmware by Filip Mulier
 | Content | Description |
 |---------|-------------|
 | `MK3/` | Firmware sources (Arduino / Mega — flash this folder) |
+| [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip) | Ready-to-download ZIP of `MK3/` for Arduino IDE |
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
@@ -63,14 +64,26 @@ Covers project scope, Addon FR3D overview, diameter hardware (Hall on A3 / ARTME
 
 ---
 
-## How to flash
+## Download ZIP (Arduino IDE)
 
-1. Install Arduino IDE (or a compatible toolchain for AVR Mega 2560 / RAMPS as used by MK3).
-2. Open `MK3/MK3.ino`.
-3. Select the correct board and port.
-4. Upload.
+If you only want to flash the board, download the ready-made package:
+
+- **[MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)**
+
+### Steps on your PC
+
+1. Download [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip).
+2. Unzip it. You will get a folder named **`MK3`** (it must stay named `MK3`, matching `MK3.ino`).
+3. Install **Arduino IDE** (or a compatible AVR Mega 2560 / RAMPS toolchain as used by MK3).
+4. In Arduino IDE: **File → Open…** and open `MK3/MK3.ino`.
+5. Select the correct **board** and **port**.
+6. Click **Upload**.
 
 After a first flash on an older EEPROM, the board may load hardcoded defaults (`Hardcoded Default Settings Loaded` on serial) or migrate known FR3D EEPROM versions to V28.
+
+### Alternative (from source tree)
+
+Clone or browse this repository and open `MK3/MK3.ino` directly — same result as using the ZIP.
 
 ---
 
@@ -87,6 +100,7 @@ After a first flash on an older EEPROM, the board may load hardcoded defaults (`
 
 ## Links
 
+- Firmware ZIP (Arduino IDE): [dist/MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)
 - Standalone user guide (PDF): [docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
 - System / web app reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
 - Source: [github.com/dadonec-boop/MK3-FR3D-Addon](https://github.com/dadonec-boop/MK3-FR3D-Addon)
