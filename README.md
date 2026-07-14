@@ -1,4 +1,4 @@
-﻿# MK3 + FR3D Addon
+# MK3 + FR3D Addon
 
 Public firmware for the **Desktop Filament Extruder MK3**, with **FR3D Addon** modifications by **Claudio Dadone**.
 
@@ -13,6 +13,7 @@ Based on **MACKEREL** (Marlin-derived filament extruder firmware by Filip Mulier
 | Content | Description |
 |---------|-------------|
 | `MK3/` | Firmware sources (Arduino / Mega — flash this folder) |
+| [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
 
@@ -59,6 +60,9 @@ For MK3S+ with FR3D Addon operating from the machine LCD (**standalone** — wit
 - [USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
 
 Covers project scope, Addon FR3D overview, diameter hardware (Hall on A3 / ARTME 3D optical), LCD main-screen use, and recommended steps for automatic predictor operation.
+
+---
+
 ## How to flash
 
 1. Install Arduino IDE (or a compatible toolchain for AVR Mega 2560 / RAMPS as used by MK3).
@@ -83,5 +87,6 @@ After a first flash on an older EEPROM, the board may load hardcoded defaults (`
 
 ## Links
 
+- Standalone user guide (PDF): [docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
 - System / web app reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
 - Source: [github.com/dadonec-boop/MK3-FR3D-Addon](https://github.com/dadonec-boop/MK3-FR3D-Addon)
