@@ -1,4 +1,4 @@
-# MK3 + FR3D Addon
+﻿# MK3 + FR3D Addon
 
 Public firmware for the **Desktop Filament Extruder MK3**, with **FR3D Addon** modifications by **Claudio Dadone**.
 
@@ -51,6 +51,14 @@ What *is* public and licensed under **GPL-3.0** in this repo is the **modified M
 
 ---
 
+
+## Standalone user guide
+
+For MK3S+ with FR3D Addon operating from the machine LCD (**standalone** — without Raspberry Pi gateway / web app):
+
+- [USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
+
+Covers project scope, Addon FR3D overview, diameter hardware (Hall on A3 / ARTME 3D optical), LCD main-screen use, and recommended steps for automatic predictor operation.
 ## How to flash
 
 1. Install Arduino IDE (or a compatible toolchain for AVR Mega 2560 / RAMPS as used by MK3).
