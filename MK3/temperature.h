@@ -54,9 +54,25 @@ extern float current_filwidth;
 //#ifdef PIDTEMPBED
   extern float fwidthKp,fwidthKi,fwidthKd;
   extern float fFactor1, fFactor2, pcirc, sensorRunoutMin, sensorRunoutMax;
+  extern uint8_t fr3d_hall_diameter_enabled;
+  extern float fr3d_hall_cal_adc_170, fr3d_hall_cal_adc_175, fr3d_hall_cal_adc_180;
+  extern float fr3d_hall_diam_offset_mm;
+  extern uint8_t fr3d_pred_enabled, fr3d_pred_mode;
+  extern uint8_t fr3d_pred_window_size, fr3d_pred_delta_t_max, fr3d_pred_t_switch_margin, fr3d_pred_t_settle_fusions;
+  extern float fr3d_pred_target_diam_mm, fr3d_pred_deadband_half_mm, fr3d_pred_temp_match_max_c;
+  extern float fr3d_diam_jump_debounce_mm, fr3d_diam_pending_match_mm;
+  extern uint8_t fr3d_diam_debug_csv_enabled;
+  extern uint8_t fr3d_csv_cycle_s;
+  extern float fr3d_pred_r_min, fr3d_pred_r_max, fr3d_pred_delta_r_min, fr3d_pred_delta_r_max;
+  extern float fr3d_pred_k_span_r, fr3d_pred_k_err_r, fr3d_pred_delta_t_min, fr3d_pred_k_span_t, fr3d_pred_k_err_t;
+  extern int16_t fr3d_pred_t_min, fr3d_pred_t_max;
+  extern float fr3d_pred_r_switch_margin;
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+  /* Promedio ~0..1023 actualizado en el ISR de temperatura (no bloquear TIMER0 desde main). */
+  extern volatile uint16_t fr3d_hall_adc_oversample;
+#endif
 //#endif
-  
-  
+
 #ifdef BABYSTEPPING
   extern volatile int babystepsTodo[3];
 #endif

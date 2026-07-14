@@ -63,6 +63,7 @@
 * Rename to Mackerel from Marlin where referred to in code - complete
 
 debug notes:
+- Spam TEMP/TARGET por USB: definir THERMAL_RUNAWAY_DEBUG_SERIAL en temperature.cpp (thermal runaway); por defecto OFF.
 - Hardcoded the temperature reading of the extruder for testing - search for FMMDEBUGTEMP
 - Change how milimeters is calculated in the planner - search for FMMDEBUGMMPLAN
 15
@@ -96,6 +97,29 @@ debug notes:
 // This determines the communication speed of the printer
 // This determines the communication speed of the printer
 #define BAUDRATE 250000
+
+// FR3D: USB serial compact commands: HELP, START/STOP, PAUT/PNAO (PMAN=alias obsoleto), PR<rpm>, COOL, R/T/F, MF, LN/IN, SF, MS/ML, ST, QUERY (+PR/SW/SWmin/SWmid/SWmax), H1/H2/HB si aplica (ver MK3_main process_fr3d_compact_line).
+// G- and M-codes from the host are rejected (SD card print still uses G-code from file).
+// T0 = target 0 degC (heater off). Limits are clamped to these ranges if out of bounds.
+#define FR3D_SERIAL_HOST_DISABLE_GM
+#define FR3D_SERIAL_RPM_MIN 0.0f
+#define FR3D_SERIAL_RPM_MAX 40.0f
+#define FR3D_SERIAL_TEMP_MIN 0
+#define FR3D_SERIAL_TEMP_MAX 190
+#define FR3D_SERIAL_FAN_MIN 0
+#define FR3D_SERIAL_FAN_MAX 100
+// true: no enviar la linea "ok" final tras comandos compactos USB OK (los echo:ok… de FR3D siguen saliendo).
+// No silencia CSV FR3D ni otros mensajes; el spam TEMP/TARGET venia de thermal runaway debug en temperature.cpp (off por defecto).
+#define DEFAULT_FR3D_SERIAL_FILTER_MSGS_ON true
+
+// USB CSV line every 10 s (header + T001 at boot); requires ULTRA_LCD for status text.
+#define FR3D_CSV_TELEMETRY
+// CSV FR3D siempre activo; datos de receta/proceso los aporta el software externo.
+
+/** Tipo de sinfin (EEPROM V19, cartesian). */
+#define SINFIN_COMP_ALTA 0
+#define SINFIN_COMP_BAJA 1
+#define DEFAULT_SINFIN_COMPRESSION SINFIN_COMP_ALTA
 
 // This enables the serial port associated to the Bluetooth interface
 //#define BTENABLED              // Enable BT interface on AT90USB devices
@@ -289,7 +313,7 @@ debug notes:
 
 
 #define DEFAULT_EXTRUDER_RPM 7 //define default extruder RPM
-#define EXTRUDER_RPM_MAX 30 
+#define EXTRUDER_RPM_MAX FR3D_SERIAL_RPM_MAX
 #define EXTRUDER_RPM_MIN 0.5
 #define DEFAULT_PULLER_FEEDRATE 12.0 //default puller feedrate when turned on
 #define PULLER_RPM_MIN 2.0 // min feedrate in manual control, 1 mm/sec min feed - limited by max pulse rate of 50,000
@@ -305,13 +329,51 @@ debug notes:
 #define DEFAULT_INJECTION_TIME 5 //default injection time in seconds
 
 #define DESIRED_FILAMENT_DIA 4.0 //define the default desired Filament diameter
-#define PREHEAT_EXTRUDER_TEMP 180  //Set to 185 deg C based on Hugh's suggestion
+#define PREHEAT_EXTRUDER_TEMP 150
 
 #define  DEFAULT_fwidthKp 22.000 // 0.005 with hall sensor, 35.00 with optical sensor
 #define  DEFAULT_fwidthKi 0.009 // 0.002 with hall sensor, 0.008 with optical sensor
 #define  DEFAULT_fwidthKd 0.009 // 0.098 with hall sensor, 0.008 with optical sensor
 #define  DEFAULT_fFact1 16300
 #define  DEFAULT_fFact2 9.5
+
+// FR3D optional Hall diameter path on A3 (kept disabled by default to preserve current A4 behavior).
+#define FR3D_HALL_DIAMETER_ENABLE_DEFAULT 0
+#define FR3D_HALL_CAL_ADC_170 500.0f
+#define FR3D_HALL_CAL_ADC_175 512.0f
+#define FR3D_HALL_CAL_ADC_180 524.0f
+#define FR3D_HALL_DIAM_OFFSET_MM_DEFAULT 0.0f
+
+// Predictor diameter (host/MK3 shared model; defaults aligned with Python tuned profile).
+#define FR3D_PRED_ENABLE_DEFAULT 1         // predictor enabled
+#define FR3D_PRED_MODE_DEFAULT 0           // 0=manual suggest, 1=automatic apply
+#define FR3D_PRED_WINDOW_SIZE_DEFAULT 3
+#define FR3D_PRED_TARGET_DIAM_MM_DEFAULT 1.75f
+#define FR3D_PRED_DEADBAND_HALF_MM_DEFAULT 0.035f
+#define FR3D_PRED_TEMP_MATCH_MAX_C_DEFAULT 2.0f
+#define FR3D_PRED_R_MIN_DEFAULT 14.0f
+#define FR3D_PRED_R_MAX_DEFAULT 26.0f
+#define FR3D_PRED_T_MIN_DEFAULT 173
+#define FR3D_PRED_T_MAX_DEFAULT 182
+#define FR3D_PRED_DELTA_R_MIN_DEFAULT 0.030f
+#define FR3D_PRED_DELTA_R_MAX_DEFAULT 0.500f
+#define FR3D_PRED_K_SPAN_R_DEFAULT 8.0f
+#define FR3D_PRED_K_ERR_R_DEFAULT 18.0f
+#define FR3D_PRED_DELTA_T_MIN_DEFAULT 0.20f
+#define FR3D_PRED_DELTA_T_MAX_DEFAULT 1
+#define FR3D_PRED_K_SPAN_T_DEFAULT 15.0f
+#define FR3D_PRED_K_ERR_T_DEFAULT 55.0f
+#define FR3D_PRED_R_SWITCH_MARGIN_DEFAULT 2.0f
+#define FR3D_PRED_T_SWITCH_MARGIN_DEFAULT 2
+#define FR3D_PRED_T_SETTLE_FUSIONS_DEFAULT 3
+#define FR3D_CSV_CYCLE_S_DEFAULT 10        // CSV/predictor cycle: 5 or 10 seconds
+
+/* Mediana CSV 10 s (Hall): debounce de salto vs valor publicado; 0 = desactivar debounce.
+ * Por defecto 0.10 mm: solo cambios >0.10 vs publicado exigen confirmar ventana siguiente (más conservador que 0.04). */
+#define FR3D_DIAM_JUMP_DEBOUNCE_MM_DEFAULT 0.100f
+#define FR3D_DIAM_PENDING_MATCH_MM_DEFAULT 0.030f
+// 0 = CSV compacto; 1 = agrega diagnostico FIFO/medianas/jump pending en CSV MK3.
+#define FR3D_DIAM_DEBUG_DEFAULT 0
 
 #define PULLER_PID_INTEGRATOR_WIND_LIMIT 1000000 //absolute value of integrator windup max value
 
@@ -683,6 +745,12 @@ const bool Z_MAX_ENDSTOP_INVERTING = true; // set to true to invert the logic of
 // http://reprap.org/wiki/RepRapDiscount_Smart_Controller
 #define REPRAP_DISCOUNT_SMART_CONTROLLER
 
+// Sensibilidad del encoder (común a toda la UI: filas de menú, Material/Lote, temperaturas, etc.).
+// Cuantos más pulsos de cuadratura pides por paso, menos “salta” el valor al girar un poco o al hacer clic.
+// Típico: 1 (Marlin por defecto), 2–3 más calmado. Ajusta solo aquí.
+#define ENCODER_PULSES_PER_STEP 2
+#define ENCODER_STEPS_PER_MENU_ITEM 5
+
 // The GADGETS3D G3D LCD/SD Controller (blue PCB)
 // http://reprap.org/wiki/RAMPS_1.3/1.4_GADGETS3D_Shield_with_Panel
 //#define G3D_PANEL
@@ -875,7 +943,8 @@ const bool Z_MAX_ENDSTOP_INVERTING = true; // set to true to invert the logic of
 // leaving it undefined or defining as 0 will disable the servo subsystem
 // If unsure, leave commented / disabled
 //
-//#define NUM_SERVOS 3 // Servo index starts with 0 for M280 command
+// Mezclador: control solo Addon STM32 (no servos en MK3).
+//#define NUM_SERVOS 2 // Servo index starts with 0 for M280 command
 
 // Servo Endstops
 //

@@ -12,7 +12,11 @@
 #include <string.h>
 #include <inttypes.h>
 
-#include <util/delay.h>
+#if defined(__has_include)
+  #if __has_include(<util/delay.h>)
+    #include <util/delay.h>
+  #endif
+#endif
 #include <avr/pgmspace.h>
 #include <avr/eeprom.h>
 #include <avr/interrupt.h>
@@ -32,6 +36,10 @@
 # include "WProgram.h"
   //Arduino < 1.0.0 does not define this, so we need to do it ourselves
 # define analogInputToDigitalPin(p) ((p) + A0)
+#endif
+
+#ifndef _delay_ms
+  #define _delay_ms(ms) delay((unsigned long)(ms))
 #endif
 
 #ifdef AT90USB
@@ -240,6 +248,15 @@ extern int default_winder_speed;
 extern int injectionTimeSeconds;
 extern unsigned long injectionModeStartMillis;
 extern int winder_rpm_factor;
+extern uint8_t sinfin_compression_mode;
+#ifdef FR3D_SERIAL_HOST_DISABLE_GM
+extern bool fr3d_serial_filter_msgs;
+#endif
+
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+/* ADC compartido con el ISR de temperatura: no usar analogRead() en el Hall. */
+float fr3d_hall_adc_read_now(void);
+#endif
 
 extern int extrudemultiply; // Sets extrude multiply factor (in percent) for all extruders
 extern int extruder_multiply[EXTRUDERS]; // sets extrude multiply factor (in percent) for each extruder individually

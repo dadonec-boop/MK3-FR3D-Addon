@@ -13,6 +13,9 @@
 #include "watchdog.h"
 #include "language.h"
 
+/* Opcional: descomentar para depurar thermal runaway (inunda USB con líneas TEMP/TARGET en estado estable). */
+/* #define THERMAL_RUNAWAY_DEBUG_SERIAL */
+
 //===========================================================================
 //=============================public variables============================
 //===========================================================================
@@ -46,7 +49,40 @@ float current_temperature_bed = 0.0;
   float pcirc = DEFAULT_PULLER_WHEEL_CIRC;
   float sensorRunoutMin = DEFAULT_SENSOR_RUNOUT_MIN;
   float sensorRunoutMax = DEFAULT_SENSOR_RUNOUT_MAX;
-//#endif //PIDTEMPBED
+  uint8_t fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
+  float fr3d_hall_cal_adc_170 = FR3D_HALL_CAL_ADC_170;
+  float fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
+  float fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
+  float fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
+  uint8_t fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
+  uint8_t fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
+  uint8_t fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
+  float fr3d_pred_target_diam_mm = FR3D_PRED_TARGET_DIAM_MM_DEFAULT;
+  float fr3d_pred_deadband_half_mm = FR3D_PRED_DEADBAND_HALF_MM_DEFAULT;
+  float fr3d_pred_temp_match_max_c = FR3D_PRED_TEMP_MATCH_MAX_C_DEFAULT;
+  float fr3d_pred_r_min = FR3D_PRED_R_MIN_DEFAULT;
+  float fr3d_pred_r_max = FR3D_PRED_R_MAX_DEFAULT;
+  int16_t fr3d_pred_t_min = (int16_t)FR3D_PRED_T_MIN_DEFAULT;
+  int16_t fr3d_pred_t_max = (int16_t)FR3D_PRED_T_MAX_DEFAULT;
+  float fr3d_pred_delta_r_min = FR3D_PRED_DELTA_R_MIN_DEFAULT;
+  float fr3d_pred_delta_r_max = FR3D_PRED_DELTA_R_MAX_DEFAULT;
+  float fr3d_pred_k_span_r = FR3D_PRED_K_SPAN_R_DEFAULT;
+  float fr3d_pred_k_err_r = FR3D_PRED_K_ERR_R_DEFAULT;
+  float fr3d_pred_delta_t_min = FR3D_PRED_DELTA_T_MIN_DEFAULT;
+  uint8_t fr3d_pred_delta_t_max = (uint8_t)FR3D_PRED_DELTA_T_MAX_DEFAULT;
+  float fr3d_pred_k_span_t = FR3D_PRED_K_SPAN_T_DEFAULT;
+  float fr3d_pred_k_err_t = FR3D_PRED_K_ERR_T_DEFAULT;
+  float fr3d_pred_r_switch_margin = FR3D_PRED_R_SWITCH_MARGIN_DEFAULT;
+  uint8_t fr3d_pred_t_switch_margin = (uint8_t)FR3D_PRED_T_SWITCH_MARGIN_DEFAULT;
+  uint8_t fr3d_pred_t_settle_fusions = (uint8_t)FR3D_PRED_T_SETTLE_FUSIONS_DEFAULT;
+  float fr3d_diam_jump_debounce_mm = FR3D_DIAM_JUMP_DEBOUNCE_MM_DEFAULT;
+  float fr3d_diam_pending_match_mm = FR3D_DIAM_PENDING_MATCH_MM_DEFAULT;
+  uint8_t fr3d_diam_debug_csv_enabled = (uint8_t)FR3D_DIAM_DEBUG_DEFAULT;
+  uint8_t fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+volatile uint16_t fr3d_hall_adc_oversample = 0;
+#endif
+ //#endif //PIDTEMPBED
   
 #ifdef FAN_SOFT_PWM
   unsigned char fanSpeedSoftPwm;
@@ -1006,11 +1042,14 @@ void thermal_runaway_protection(int *state, unsigned long *timer, float temperat
       if (temperature >= target_temperature) *state = 2;
       break;
     case 2: // "Temperature Stable" state
+      /* Depuración: si se define THERMAL_RUNAWAY_DEBUG_SERIAL, inunda el USB con TEMP/TARGET
+         en cada ciclo (manage_heater) mientras el hotend está estable — desactivado por defecto. */
+#ifdef THERMAL_RUNAWAY_DEBUG_SERIAL
       SERIAL_ERRORPGM("TEMP");
       SERIAL_ERRORLN(temperature);
       SERIAL_ERRORPGM("TARGET");
-     SERIAL_ERRORLN(target_temperature);
-      
+      SERIAL_ERRORLN(target_temperature);
+#endif
       if (temperature >= (target_temperature - hysteresis_degc))
       {
         *timer = millis();
@@ -1201,6 +1240,9 @@ ISR(TIMER0_COMPB_vect)
   static unsigned long raw_temp_2_value = 0;
   static unsigned long raw_temp_bed_value = 0;
   static unsigned long raw_filwidth_value = 0;  //FMM added for filament width sensor
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+  static unsigned long raw_fr3d_hall_value = 0;
+#endif
 
   static unsigned char temp_state = 10;  //FMM  one 2 more cases for filament width sensor measurement
   static unsigned char pwm_count = (1 << SOFT_PWM_SCALE);
@@ -1366,8 +1408,30 @@ ISR(TIMER0_COMPB_vect)
        raw_filwidth_value= raw_filwidth_value-(raw_filwidth_value>>5);  //multipliy raw_filwidth_value by 31/32
        raw_filwidth_value= raw_filwidth_value + (ADC<<5);  //add new ADC reading
       #endif
-      temp_state = 0;  
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+      temp_state = 11;
+#else
+      temp_state = 0;
+#endif
       break;
+
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+    case 11: // Prepare FR3D Hall (mismo ISR que temp: evita cli() largo que corta soft-PWM del hotend)
+      #if FR3D_HALL_DIAMETER_PIN > 7
+        ADCSRB = 1 << MUX5;
+      #else
+        ADCSRB = 0;
+      #endif
+      ADMUX = ((1 << REFS0) | (FR3D_HALL_DIAMETER_PIN & 0x07));
+      ADCSRA |= 1 << ADSC;
+      lcd_buttons_update();
+      temp_state = 12;
+      break;
+    case 12: // Measure FR3D Hall
+      raw_fr3d_hall_value += ADC;
+      temp_state = 0;
+      break;
+#endif
 
       
     case 10: //Startup, delay initial temp reading a tiny bit so the hardware can settle.
@@ -1399,6 +1463,9 @@ ISR(TIMER0_COMPB_vect)
 #if defined(FILWIDTH_PIN) && (FILWIDTH_PIN > -1)
       current_raw_filwidth = raw_filwidth_value>>6;  //need to divide to get to 0-16384 range since we used 1/32 IIR filter approach
 #endif
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+      fr3d_hall_adc_oversample = (uint16_t)(raw_fr3d_hall_value / OVERSAMPLENR);
+#endif
 
     }
     
@@ -1408,6 +1475,9 @@ ISR(TIMER0_COMPB_vect)
     raw_temp_1_value = 0;
     raw_temp_2_value = 0;
     raw_temp_bed_value = 0;
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+    raw_fr3d_hall_value = 0;
+#endif
     //raw_filwidth_value = 0;  //remove so that we use a IIR filter
 
 #if HEATER_0_RAW_LO_TEMP > HEATER_0_RAW_HI_TEMP

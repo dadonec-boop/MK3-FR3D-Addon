@@ -5,6 +5,8 @@
 
 #ifdef ULTRA_LCD
 
+  extern char lcd_status_message[LCD_WIDTH + 1];
+
   void lcd_update(bool encoderClicked, bool encoderLongPressed);
   void lcd_init();
   void lcd_setstatus(const char* message);
@@ -23,7 +25,7 @@
   #define LCD_ALERTMESSAGEPGM(x) lcd_setalertstatuspgm(PSTR(x))
 
   #define LCD_UPDATE_INTERVAL 100
-  #define LCD_TIMEOUT_TO_STATUS 15000
+  #define LCD_TIMEOUT_TO_STATUS 120000UL
 
   #ifdef ULTIPANEL
   void lcd_buttons_update();
@@ -49,6 +51,9 @@
     
   void lcd_buzz(long duration,uint16_t freq);
   bool lcd_clicked();
+
+  void lcd_extruder_pause();
+  void lcd_extruder_resume();
 
   #ifdef NEWPANEL
     #define EN_C (1<<BLEN_C)

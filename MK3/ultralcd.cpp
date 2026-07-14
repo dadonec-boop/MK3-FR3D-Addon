@@ -7,6 +7,8 @@
 #include "temperature.h"
 #include "stepper.h"
 #include "ConfigurationStore.h"
+#include "fr3d_telemetry.h"
+#include "fr3d_gateway_id.h"
 
 int8_t encoderDiff; /* encoderDiff is updated from interrupt context and added to encoderPosition every LCD update */
 
@@ -17,8 +19,6 @@ int plaPreheatFanSpeed;
 
 int absPreheatHotendTemp;
 int absPreheatHPBTemp;
-
-int alt_cnt = 0;					// counter for alternate lcd display between av.max min fvd 4-2-2015
 
 unsigned long message_millis=0;
 
@@ -50,12 +50,20 @@ static void lcd_status_screen();
 #ifdef ULTIPANEL
 extern bool powersupply;
 static void lcd_main_menu();
-static void lcd_tune_menu();
-static void lcd_prepare_menu();
+static void lcd_tune_menu(void);
+static void lcd_prepare_menu(void);
 static void lcd_move_menu();
 static void lcd_control_menu();
 static void lcd_control_temperature_menu();
 static void lcd_control_Filament_PID_menu();
+static void lcd_addonfr3d_menu();
+static void lcd_addonfr3d_hall_a3_menu();
+static void lcd_addonfr3d_predictor_menu();
+static void lcd_addonfr3d_gateway_id_screen();
+static void lcd_addonfr3d_predictor_advanced_menu();
+static void lcd_pred_store_settings();
+static void lcd_pred_apply_auto_on();
+static void lcd_settings_menu_back();
 static void lcd_control_temperature_preheat_pla_settings_menu();
 static void lcd_control_temperature_preheat_abs_settings_menu();
 static void lcd_control_motion_menu();
@@ -64,6 +72,11 @@ static void lcd_set_contrast();
 #endif
 static void lcd_control_retract_menu();
 static void lcd_sdcard_menu();
+#ifndef DELTA
+static void lcd_sinfin_menu();
+static void lcd_sinfin_set_alta();
+static void lcd_sinfin_set_baja();
+#endif
 
 static void lcd_quick_feedback();//Cause an LCD refresh, and give the user visual or audible feedback that something has happened
 
@@ -76,6 +89,7 @@ static void menu_action_sdfile(const char* filename, char* longFilename);
 static void menu_action_sddirectory(const char* filename, char* longFilename);
 static void menu_action_setting_edit_bool(const char* pstr, bool* ptr);
 static void menu_action_setting_edit_int3(const char* pstr, int* ptr, int minValue, int maxValue);
+static void menu_action_setting_edit_int4(const char* pstr, int* ptr, int minValue, int maxValue);
 static void menu_action_setting_edit_float3(const char* pstr, float* ptr, float minValue, float maxValue);
 static void menu_action_setting_edit_float32(const char* pstr, float* ptr, float minValue, float maxValue);
 static void menu_action_setting_edit_float22(const char* pstr, float* ptr, float minValue, float maxValue);
@@ -175,6 +189,14 @@ uint32_t lcd_next_update_millis;
 uint8_t lcd_status_update_delay;
 uint8_t lcdDrawUpdate = 2;                  /* Set to none-zero when the LCD needs to draw, decreased after every draw. Set to 2 in LCD routines so the LCD gets at least 1 full redraw (first redraw is partial) */
 
+#ifdef ULTIPANEL
+static unsigned long lcd_menu_timeout_deadline = 0;
+static void lcd_arm_menu_timeout(unsigned long ms)
+{
+  lcd_menu_timeout_deadline = millis() + ms;
+}
+#endif
+
 //prevMenu and prevEncoderPosition are used to store the previous menu location when editing settings.
 menuFunc_t prevMenu = NULL;
 uint16_t prevEncoderPosition;
@@ -187,6 +209,8 @@ menuFunc_t callbackFunc;
 // place-holders for Ki and Kd edits
 float raw_Ki, raw_Kd;
 
+static bool lcd_pred_auto_on = false;
+
 /* Main status screen. It's up to the implementation specific part to show what is needed. As this is very display dependent */
 static void lcd_status_screen()
 {
@@ -197,7 +221,11 @@ static void lcd_status_screen()
     if (lcdDrawUpdate)
     {
         lcd_implementation_status_screen();
-        lcd_status_update_delay = 10;   /* redraw the main screen every second. This is easier then trying keep track of all things that change on the screen */
+#ifdef FR3D_CSV_TELEMETRY
+        lcd_status_update_delay = 5;   /* 5 x 100 ms = 500 ms (promedio FIFO Hall) */
+#else
+        lcd_status_update_delay = 10;   /* redraw the main screen every second */
+#endif
     }
 #ifdef ULTIPANEL
     if (ENCODER_CLICKED)
@@ -265,7 +293,6 @@ static void lcd_return_to_status()
     currentMenu = lcd_status_screen;
 }
 
-
 static void lcd_return_to_control_temperature()
 {
     encoderPosition = 0;
@@ -308,7 +335,7 @@ static void lcd_disable_statistics()
 	lcd_return_to_status();
 	}
 
-static void lcd_extruder_pause()
+void lcd_extruder_pause()
 {
     extrude_status=extrude_status & ES_ENABLE_CLEAR_NO_AUTO;
     puller_feedrate_default = puller_feedrate;   //save default feed rate
@@ -319,7 +346,7 @@ static void lcd_extruder_pause()
 
     LCD_MESSAGEPGM(MSG_EXTRUDER_STOPPED);
 }
-static void lcd_extruder_resume()
+void lcd_extruder_resume()
 {
 	//feedmultiply=DEFAULT_FEEDMULTIPLY;
 	puller_feedrate = puller_feedrate_default;   //use default feed rate
@@ -402,6 +429,9 @@ static void lcd_main_menu()
         #endif
     	
     
+    /* Label "Predictor Auto" + On/Off fits 20-col LCD (full word Predictor). */
+    lcd_pred_auto_on = (fr3d_pred_mode != 0);
+    MENU_ITEM_EDIT_CALLBACK(bool, "Predictor Auto", &lcd_pred_auto_on, lcd_pred_apply_auto_on);
     if (movesplanned() || IS_SD_PRINTING)
     {
         MENU_ITEM(submenu, MSG_TUNE, lcd_tune_menu);
@@ -521,6 +551,24 @@ static void lcd_babystep_z()
 
 
 
+#ifdef EEPROM_SETTINGS
+static void lcd_control_load_eprom()
+{
+    Config_RetrieveSettings();
+}
+#endif
+
+static void lcd_settings_menu_back()
+{
+    /* Must draw Settings here (not menu_action_submenu): an intermediate
+       redirect consumes lcdDrawUpdate==1 after clear and leaves a blank LCD
+       until the encoder moves. */
+    if (movesplanned() || IS_SD_PRINTING)
+        lcd_tune_menu();
+    else
+        lcd_prepare_menu();
+}
+
 static void lcd_tune_menu()
 {
     START_MENU();
@@ -532,6 +580,7 @@ static void lcd_tune_menu()
     MENU_ITEM_EDIT(int3, MSG_NOZZLE1, &target_temperature[1], 0, HEATER_1_MAXTEMP - 15);
 #endif
     MENU_ITEM_EDIT(int3, MSG_WINDER_SPEED, &default_winder_speed, 0, 100); //Fan Speed limited to 45 in the MK2 because of using 12V fan in a 24V system. Same in prepare_menu
+    MENU_ITEM(submenu, "Predictor Parms", lcd_addonfr3d_predictor_menu);
 #if TEMP_SENSOR_2 != 0
     MENU_ITEM_EDIT(int3, MSG_NOZZLE2, &target_temperature[2], 0, HEATER_2_MAXTEMP - 15);
 #endif
@@ -597,7 +646,7 @@ void lcd_preheat_pla1()
 {
     setTargetHotend1(plaPreheatHotendTemp);
     setTargetBed(plaPreheatHPBTemp);
-    fanSpeed = plaPreheatFanSpeed;
+    winderSpeed = plaPreheatFanSpeed;
     lcd_return_to_status();
     setWatch(); // heater sanity check timer
 }
@@ -606,7 +655,7 @@ void lcd_preheat_abs1()
 {
     setTargetHotend1(absPreheatHotendTemp);
     setTargetBed(absPreheatHPBTemp);
-    fanSpeed = default_winder_speed;
+    winderSpeed = default_winder_speed;
     lcd_return_to_status();
     setWatch(); // heater sanity check timer
 }
@@ -617,7 +666,7 @@ void lcd_preheat_pla2()
 {
     setTargetHotend2(plaPreheatHotendTemp);
     setTargetBed(plaPreheatHPBTemp);
-    fanSpeed = plaPreheatFanSpeed;
+    winderSpeed = plaPreheatFanSpeed;
     lcd_return_to_status();
     setWatch(); // heater sanity check timer
 }
@@ -626,7 +675,7 @@ void lcd_preheat_abs2()
 {
     setTargetHotend2(absPreheatHotendTemp);
     setTargetBed(absPreheatHPBTemp);
-    fanSpeed = default_winder_speed;
+    winderSpeed = default_winder_speed;
     lcd_return_to_status();
     setWatch(); // heater sanity check timer
 }
@@ -639,7 +688,7 @@ void lcd_preheat_pla012()
     setTargetHotend1(plaPreheatHotendTemp);
     setTargetHotend2(plaPreheatHotendTemp);
     setTargetBed(plaPreheatHPBTemp);
-    fanSpeed = plaPreheatFanSpeed;
+    winderSpeed = plaPreheatFanSpeed;
     lcd_return_to_status();
     setWatch(); // heater sanity check timer
 }
@@ -650,7 +699,7 @@ void lcd_preheat_abs012()
     setTargetHotend1(absPreheatHotendTemp);
     setTargetHotend2(absPreheatHotendTemp);
     setTargetBed(absPreheatHPBTemp);
-    fanSpeed = default_winder_speed;
+    winderSpeed = default_winder_speed;
     lcd_return_to_status();
     setWatch(); // heater sanity check timer
 }
@@ -722,6 +771,7 @@ static void lcd_prepare_menu()
     MENU_ITEM_EDIT(float22, MSG_EXT_RPM, &extruder_rpm_set,EXTRUDER_RPM_MIN,EXTRUDER_RPM_MAX);
     MENU_ITEM_EDIT(int3, MSG_HEATER, &target_temperature[0], 150, HEATER_0_MAXTEMP - 15); 
     MENU_ITEM_EDIT(int3, MSG_WINDER_SPEED, &default_winder_speed, 0, 100); //Fan Speed limited to 45 in the MK2 because of using 12V fan in a 24V system. Same in tune_menu
+    MENU_ITEM(submenu, "Predictor Parms", lcd_addonfr3d_predictor_menu);
    // MENU_ITEM_EDIT(float22, MSG_SPEED, &puller_feedrate_default, PULLER_FEEDRATE_MIN, PULLER_FEEDRATE_MAX);
     MENU_ITEM_EDIT(float6,MSG_LENGTH_CUTOFF, &fil_length_cutoff,1000,999000);
     MENU_ITEM_EDIT(int3, MSG_INJECTION_TIME, &injectionTimeSeconds, 1, 3 * 60); // 3 minutes max
@@ -965,16 +1015,583 @@ static void lcd_move_menu()
     END_MENU();
 }
 
+#ifndef DELTA
+static void lcd_sinfin_set_alta()
+{
+    sinfin_compression_mode = SINFIN_COMP_ALTA;
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    lcd_quick_feedback();
+    lcd_return_to_status();
+}
+static void lcd_sinfin_set_baja()
+{
+    sinfin_compression_mode = SINFIN_COMP_BAJA;
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    lcd_quick_feedback();
+    lcd_return_to_status();
+}
+static void lcd_sinfin_menu()
+{
+    START_MENU();
+    MENU_ITEM(back, MSG_CONTROL, lcd_control_menu);
+    MENU_ITEM(function, MSG_SINFIN_ALTA, lcd_sinfin_set_alta);
+    MENU_ITEM(function, MSG_SINFIN_BAJA, lcd_sinfin_set_baja);
+    END_MENU();
+}
+#endif
+
+static float lcd_hall_a3_read_raw_adc()
+{
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+    const int raw = (int)fr3d_hall_adc_read_now();
+    return (float)raw;
+#else
+    return 0.0f;
+#endif
+}
+
+static uint8_t lcd_hall_capture_point = 0; // 170, 175, 180 (x100)
+static float *lcd_hall_capture_dst = NULL;
+static int lcd_hall_offset_milli_edit = 0; // UI unico: -200..200 (paso 0.001 mm)
+
+static void lcd_hall_store_settings()
+{
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+}
+
+static void lcd_hall_offset_ui_refresh()
+{
+    float mm = fr3d_hall_diam_offset_mm;
+    if (mm < -0.20f) mm = -0.20f;
+    if (mm > 0.20f) mm = 0.20f;
+    lcd_hall_offset_milli_edit = (int)(mm * 1000.0f + (mm >= 0.0f ? 0.5f : -0.5f));
+    if (lcd_hall_offset_milli_edit < -200) lcd_hall_offset_milli_edit = -200;
+    if (lcd_hall_offset_milli_edit > 200) lcd_hall_offset_milli_edit = 200;
+}
+
+static void lcd_hall_offset_ui_apply()
+{
+    int cv = lcd_hall_offset_milli_edit;
+    if (cv < -200) cv = -200;
+    if (cv > 200) cv = 200;
+    fr3d_hall_diam_offset_mm = ((float)cv) / 1000.0f;
+}
+
+static void lcd_hall_offset_ui_apply_and_store()
+{
+    lcd_hall_offset_ui_apply();
+    lcd_hall_store_settings();
+}
+
+static void lcd_hall_offset_edit_screen()
+{
+    int step = encoderPosition;
+    if (step != 0)
+    {
+      encoderPosition = 0;
+      lcd_hall_offset_milli_edit += step;
+      if (lcd_hall_offset_milli_edit < -200) lcd_hall_offset_milli_edit = -200;
+      if (lcd_hall_offset_milli_edit > 200) lcd_hall_offset_milli_edit = 200;
+      lcd_hall_offset_ui_apply();
+      lcdDrawUpdate = 2;
+    }
+
+    if (lcdDrawUpdate)
+    {
+      char line[17];
+      const bool neg = (lcd_hall_offset_milli_edit < 0);
+      const int abs_cv = neg ? -lcd_hall_offset_milli_edit : lcd_hall_offset_milli_edit;
+      const int ent = abs_cv / 1000;
+      const int dec = abs_cv % 1000;
+      snprintf(line, sizeof(line), "%c%d.%03d", neg ? '-' : ' ', ent, dec);
+      lcd_implementation_drawedit(PSTR("Offset"), line);
+    }
+
+    if (ENCODER_CLICKED)
+    {
+      lcd_hall_offset_ui_apply_and_store();
+      lcd_quick_feedback();
+      currentMenu = lcd_addonfr3d_hall_a3_menu;
+      encoderPosition = 0;
+      return;
+    }
+}
+
+static void lcd_hall_offset_open_editor()
+{
+    lcd_hall_offset_ui_refresh();
+    currentMenu = lcd_hall_offset_edit_screen;
+    encoderPosition = 0;
+    lcdDrawUpdate = 2;
+}
+
+static unsigned long lcd_hall_live_last_ms = 0;
+
+static void lcd_hall_capture_live_screen()
+{
+    const unsigned long now = millis();
+    if ((long)(now - lcd_hall_live_last_ms) >= 500)
+    {
+      lcd_hall_live_last_ms = now;
+      lcdDrawUpdate = 1;
+      lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
+    }
+
+    const float raw = lcd_hall_a3_read_raw_adc();
+    const int cur_adc = (int)(raw + 0.5f);
+    int saved_adc = 0;
+    const char *title = PSTR("Hall A3 Cal");
+
+    if (lcd_hall_capture_dst != NULL)
+      saved_adc = (int)((*lcd_hall_capture_dst) + 0.5f);
+
+    if (lcd_hall_capture_point == 170) title = PSTR("Cal 1.70 C/S");
+    else if (lcd_hall_capture_point == 175) title = PSTR("Cal 1.75 C/S");
+    else if (lcd_hall_capture_point == 180) title = PSTR("Cal 1.80 C/S");
+
+    if (lcdDrawUpdate)
+    {
+      char line[17];
+#ifdef FR3D_CSV_TELEMETRY
+      snprintf(line, sizeof(line), "%4d D%04u", cur_adc, (unsigned int)fr3d_diam_fifo_avg_x1000);
+#else
+      snprintf(line, sizeof(line), "%4d / %4d", cur_adc, saved_adc);
+#endif
+      lcd_implementation_drawedit(title, line);
+    }
+
+    // Click = guardar valor ADC actual para el patron activo.
+    if (ENCODER_CLICKED && lcd_hall_capture_dst != NULL)
+    {
+      *lcd_hall_capture_dst = raw;
+#ifdef EEPROM_SETTINGS
+      Config_StoreSettings();
+#endif
+      lcd_quick_feedback();
+      currentMenu = lcd_addonfr3d_hall_a3_menu;
+      encoderPosition = 0;
+      return;
+    }
+
+    // Girar encoder = salir sin cambios.
+    if (encoderPosition != 0)
+    {
+      encoderPosition = 0;
+      lcd_quick_feedback();
+      currentMenu = lcd_addonfr3d_hall_a3_menu;
+      return;
+    }
+}
+
+static void lcd_hall_capture_170()
+{
+    lcd_hall_capture_point = 170;
+    lcd_hall_capture_dst = &fr3d_hall_cal_adc_170;
+    currentMenu = lcd_hall_capture_live_screen;
+    encoderPosition = 0;
+    lcd_hall_live_last_ms = 0;
+    lcdDrawUpdate = 2;
+    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
+}
+
+static void lcd_hall_capture_175()
+{
+    lcd_hall_capture_point = 175;
+    lcd_hall_capture_dst = &fr3d_hall_cal_adc_175;
+    currentMenu = lcd_hall_capture_live_screen;
+    encoderPosition = 0;
+    lcd_hall_live_last_ms = 0;
+    lcdDrawUpdate = 2;
+    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
+}
+
+static void lcd_hall_capture_180()
+{
+    lcd_hall_capture_point = 180;
+    lcd_hall_capture_dst = &fr3d_hall_cal_adc_180;
+    currentMenu = lcd_hall_capture_live_screen;
+    encoderPosition = 0;
+    lcd_hall_live_last_ms = 0;
+    lcdDrawUpdate = 2;
+    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
+}
+
+static void lcd_addonfr3d_hall_a3_menu()
+{
+    lcd_hall_offset_ui_refresh();
+    START_MENU();
+    MENU_ITEM(back, "AddonFR3D", lcd_addonfr3d_menu);
+    MENU_ITEM(function, "Capture 1.70", lcd_hall_capture_170);
+    MENU_ITEM(function, "Capture 1.75", lcd_hall_capture_175);
+    MENU_ITEM(function, "Capture 1.80", lcd_hall_capture_180);
+    MENU_ITEM(function, "Offset", lcd_hall_offset_open_editor);
+    END_MENU();
+}
+
+static int lcd_pred_delta_t_max_edit = 1;
+static int lcd_pred_t_switch_margin_edit = 2;
+static int lcd_pred_r_switch_margin_edit = 2;
+static int lcd_pred_temp_match_edit = 2;
+static int lcd_pred_t_settle_fusions_edit = 3;
+static int lcd_pred_t_min_edit = 173;
+static int lcd_pred_t_max_edit = 182;
+
+static void lcd_pred_store_settings()
+{
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+}
+
+static void lcd_pred_apply_auto_on()
+{
+    fr3d_pred_mode = lcd_pred_auto_on ? 1 : 0;
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_sync_ui_edits()
+{
+    fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
+    lcd_pred_delta_t_max_edit = (int)constrain((int)fr3d_pred_delta_t_max, 1, 20);
+    lcd_pred_t_switch_margin_edit = (int)constrain((int)fr3d_pred_t_switch_margin, 0, 20);
+    lcd_pred_r_switch_margin_edit = (int)constrain((int)(fr3d_pred_r_switch_margin + 0.5f), 0, 20);
+    lcd_pred_temp_match_edit = (int)constrain((int)(fr3d_pred_temp_match_max_c + 0.5f), 0, 20);
+    lcd_pred_t_settle_fusions_edit = (int)constrain((int)fr3d_pred_t_settle_fusions, 0, 20);
+    lcd_pred_t_min_edit = (int)fr3d_pred_t_min;
+    lcd_pred_t_max_edit = (int)fr3d_pred_t_max;
+}
+
+static void lcd_pred_apply_delta_t_max()
+{
+    fr3d_pred_delta_t_max = (uint8_t)constrain(lcd_pred_delta_t_max_edit, 1, 20);
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_apply_t_switch_margin()
+{
+    fr3d_pred_t_switch_margin = (uint8_t)constrain(lcd_pred_t_switch_margin_edit, 0, 20);
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_apply_r_switch_margin()
+{
+    fr3d_pred_r_switch_margin = (float)constrain(lcd_pred_r_switch_margin_edit, 0, 20);
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_apply_temp_match()
+{
+    fr3d_pred_temp_match_max_c = (float)constrain(lcd_pred_temp_match_edit, 0, 20);
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_apply_t_settle_fusions()
+{
+    fr3d_pred_t_settle_fusions = (uint8_t)constrain(lcd_pred_t_settle_fusions_edit, 0, 20);
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_apply_t_min()
+{
+    fr3d_pred_t_min = (int16_t)constrain(lcd_pred_t_min_edit, 0, 300);
+    if (fr3d_pred_t_min > fr3d_pred_t_max) fr3d_pred_t_max = fr3d_pred_t_min;
+    lcd_pred_sync_ui_edits();
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_apply_t_max()
+{
+    fr3d_pred_t_max = (int16_t)constrain(lcd_pred_t_max_edit, 0, 300);
+    if (fr3d_pred_t_max < fr3d_pred_t_min) fr3d_pred_t_min = fr3d_pred_t_max;
+    lcd_pred_sync_ui_edits();
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_cycle_set_5()
+{
+    fr3d_csv_cycle_s = 5;
+    fr3d_csv_sync_sample_timer();
+    lcd_pred_store_settings();
+    lcd_quick_feedback();
+    menu_action_submenu(lcd_addonfr3d_predictor_advanced_menu);
+}
+
+static void lcd_pred_cycle_set_10()
+{
+    fr3d_csv_cycle_s = 10;
+    fr3d_csv_sync_sample_timer();
+    lcd_pred_store_settings();
+    lcd_quick_feedback();
+    menu_action_submenu(lcd_addonfr3d_predictor_advanced_menu);
+}
+
+static void lcd_pred_set_diamdebug_off()
+{
+    fr3d_diam_debug_csv_enabled = 0;
+    lcd_pred_store_settings();
+    lcd_quick_feedback();
+    menu_action_submenu(lcd_addonfr3d_predictor_advanced_menu);
+}
+
+static void lcd_pred_set_diamdebug_on()
+{
+    fr3d_diam_debug_csv_enabled = 1;
+    lcd_pred_store_settings();
+    lcd_quick_feedback();
+    menu_action_submenu(lcd_addonfr3d_predictor_advanced_menu);
+}
+
+static void lcd_addonfr3d_predictor_diamdebug_menu()
+{
+    START_MENU();
+    MENU_ITEM(back, "Advanced", lcd_addonfr3d_predictor_advanced_menu);
+    if (fr3d_diam_debug_csv_enabled) {
+        MENU_ITEM(function, "* DIAMDEBUG ON", lcd_pred_set_diamdebug_on);
+        MENU_ITEM(function, "DIAMDEBUG OFF", lcd_pred_set_diamdebug_off);
+    } else {
+        MENU_ITEM(function, "DIAMDEBUG ON", lcd_pred_set_diamdebug_on);
+        MENU_ITEM(function, "* DIAMDEBUG OFF", lcd_pred_set_diamdebug_off);
+    }
+    END_MENU();
+}
+
+static void lcd_addonfr3d_predictor_cycle_menu()
+{
+    START_MENU();
+    MENU_ITEM(back, "Advanced", lcd_addonfr3d_predictor_advanced_menu);
+    if (fr3d_csv_cycle_s == 5) {
+        MENU_ITEM(function, "* CYCLE 5 s", lcd_pred_cycle_set_5);
+        MENU_ITEM(function, "CYCLE 10 s", lcd_pred_cycle_set_10);
+    } else {
+        MENU_ITEM(function, "CYCLE 5 s", lcd_pred_cycle_set_5);
+        MENU_ITEM(function, "* CYCLE 10 s", lcd_pred_cycle_set_10);
+    }
+    END_MENU();
+}
+
+static void lcd_addonfr3d_predictor_advanced_menu()
+{
+    lcd_pred_sync_ui_edits();
+    START_MENU();
+    MENU_ITEM(back, "Predictor Parms", lcd_addonfr3d_predictor_menu);
+    MENU_ITEM_EDIT_CALLBACK(int3, "E margin", &lcd_pred_r_switch_margin_edit, 0, 20, lcd_pred_apply_r_switch_margin);
+    MENU_ITEM_EDIT_CALLBACK(int3, "T margin", &lcd_pred_t_switch_margin_edit, 0, 20, lcd_pred_apply_t_switch_margin);
+    MENU_ITEM_EDIT_CALLBACK(int3, "|T-Ttgt| max", &lcd_pred_temp_match_edit, 0, 20, lcd_pred_apply_temp_match);
+    MENU_ITEM_EDIT_CALLBACK(int3, "T settle N", &lcd_pred_t_settle_fusions_edit, 0, 20, lcd_pred_apply_t_settle_fusions);
+    if (fr3d_csv_cycle_s == 5)
+        MENU_ITEM(submenu, "CYCLE 5 s", lcd_addonfr3d_predictor_cycle_menu);
+    else
+        MENU_ITEM(submenu, "CYCLE 10 s", lcd_addonfr3d_predictor_cycle_menu);
+    MENU_ITEM_EDIT_CALLBACK(float32, "Med jump mm", &fr3d_diam_jump_debounce_mm, 0.000, 0.500, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "Med conf mm", &fr3d_diam_pending_match_mm, 0.000, 0.200, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "dE min", &fr3d_pred_delta_r_min, 0.000, 5.000, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "dE max", &fr3d_pred_delta_r_max, 0.000, 5.000, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "kSpan E", &fr3d_pred_k_span_r, 0.0, 200.0, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "kErr E", &fr3d_pred_k_err_r, 0.0, 200.0, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "dT min C", &fr3d_pred_delta_t_min, 0.0, 20.0, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(int3, "dT max C", &lcd_pred_delta_t_max_edit, 1, 20, lcd_pred_apply_delta_t_max);
+    MENU_ITEM_EDIT_CALLBACK(float32, "kSpan T", &fr3d_pred_k_span_t, 0.0, 200.0, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "kErr T", &fr3d_pred_k_err_t, 0.0, 200.0, lcd_pred_store_settings);
+    if (fr3d_diam_debug_csv_enabled)
+        MENU_ITEM(submenu, "DIAMDEBUG ON", lcd_addonfr3d_predictor_diamdebug_menu);
+    else
+        MENU_ITEM(submenu, "DIAMDEBUG OFF", lcd_addonfr3d_predictor_diamdebug_menu);
+    END_MENU();
+}
+
+static void lcd_addonfr3d_predictor_menu()
+{
+    if (fr3d_pred_enabled == 0) {
+        fr3d_pred_enabled = 1;
+        lcd_pred_store_settings();
+    }
+    lcd_pred_sync_ui_edits();
+    START_MENU();
+    MENU_ITEM(back, MSG_PREPARE, lcd_settings_menu_back);
+
+    MENU_ITEM_EDIT_CALLBACK(float32, "Emin", &fr3d_pred_r_min, 0.0, EXTRUDER_RPM_MAX, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "Emax", &fr3d_pred_r_max, 0.0, EXTRUDER_RPM_MAX, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(int3, "Tmin", &lcd_pred_t_min_edit, 0, 300, lcd_pred_apply_t_min);
+    MENU_ITEM_EDIT_CALLBACK(int3, "Tmax", &lcd_pred_t_max_edit, 0, 300, lcd_pred_apply_t_max);
+    MENU_ITEM_EDIT_CALLBACK(float53, "Deadband/2", &fr3d_pred_deadband_half_mm, 0.000, 0.200, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(float32, "Target D mm", &fr3d_pred_target_diam_mm, 0.50, 7.55, lcd_pred_store_settings);
+    MENU_ITEM(submenu, "Advanced", lcd_addonfr3d_predictor_advanced_menu);
+    END_MENU();
+}
+
+#ifndef DOGLCD
+static void lcd_gateway_id_draw_row(uint8_t row, const char *text)
+{
+    char buf[LCD_WIDTH + 1];
+    uint8_t i;
+    uint8_t n = (uint8_t)strlen(text);
+    if (n > LCD_WIDTH)
+        n = LCD_WIDTH;
+    for (i = 0; i < n; i++)
+        buf[i] = text[i];
+    for (; i < LCD_WIDTH; i++)
+        buf[i] = ' ';
+    buf[LCD_WIDTH] = '\0';
+    lcd.setCursor(0, row);
+    lcd.print(buf);
+}
+#else
+static void lcd_gateway_fr3d_dogm_row(uint8_t row, const char *text)
+{
+    char buf[LCD_WIDTH + 1];
+    uint8_t i;
+    uint8_t n = (uint8_t)strlen(text);
+    if (n > LCD_WIDTH)
+        n = LCD_WIDTH;
+    for (i = 0; i < n; i++)
+        buf[i] = text[i];
+    for (; i < LCD_WIDTH; i++)
+        buf[i] = ' ';
+    buf[LCD_WIDTH] = '\0';
+    u8g.setFont(u8g_font_6x10_marlin);
+    u8g.setPrintPos(0, (row + 1) * DOG_CHAR_HEIGHT);
+    u8g.print(buf);
+}
+#endif
+
+static bool lcd_gw_prefix_ci(const char *s, const char *pfx)
+{
+    while (*pfx) {
+        if (*s == '\0')
+            return false;
+        char a = *s++;
+        char b = *pfx++;
+        if (a >= 'a' && a <= 'z')
+            a = (char)(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z')
+            b = (char)(b - 'a' + 'A');
+        if (a != b)
+            return false;
+    }
+    return true;
+}
+
+static void lcd_gateway_fr3d_fill_lines(
+    char *line_app,
+    char *line_wifi,
+    char *line_ip,
+    char *line_tok)
+{
+    strncpy(line_app, "fr3d-addon.web.app", 21);
+    line_app[20] = '\0';
+
+    if (fr3d_gwid_has_wifi()) {
+        const char *raw = fr3d_gw_id_wifi;
+        if (lcd_gw_prefix_ci(raw, "WIFI "))
+            snprintf(line_wifi, 21, "wifi: %s", raw + 5);
+        else if (lcd_gw_prefix_ci(raw, "WIFI:"))
+            snprintf(line_wifi, 21, "wifi:%s", raw + 5);
+        else
+            snprintf(line_wifi, 21, "wifi: %s", raw);
+    } else {
+        strncpy(line_wifi, "wifi: (none)", 21);
+    }
+    line_wifi[20] = '\0';
+
+    if (fr3d_gwid_has_ip()) {
+        snprintf(
+            line_ip,
+            21,
+            "%s/%s",
+            fr3d_gw_id_ip,
+            fr3d_gwid_has_cloud() ? fr3d_gw_id_cloud : "OFFL");
+    } else {
+        snprintf(
+            line_ip,
+            21,
+            "0.0.0.0/%s",
+            fr3d_gwid_has_cloud() ? fr3d_gw_id_cloud : "OFFL");
+    }
+    line_ip[20] = '\0';
+
+    if (fr3d_gwid_has_token())
+        snprintf(line_tok, 21, "Token:%s", fr3d_gw_id_token);
+    else
+        line_tok[0] = '\0';
+    line_tok[20] = '\0';
+}
+
+static void lcd_addonfr3d_gateway_id_screen(void)
+{
+    static unsigned long lcd_gwid_last_ms = 0;
+    const unsigned long now = millis();
+    if ((long)(now - lcd_gwid_last_ms) >= 1000)
+    {
+        lcd_gwid_last_ms = now;
+        lcdDrawUpdate = 1;
+    }
+
+    if (lcdDrawUpdate)
+    {
+        char line_app[21];
+        char line_wifi[21];
+        char line_ip[21];
+        char line_tok[21];
+        lcd_gateway_fr3d_fill_lines(line_app, line_wifi, line_ip, line_tok);
+#ifndef DOGLCD
+        lcd_gateway_id_draw_row(0, line_app);
+        lcd_gateway_id_draw_row(1, line_wifi);
+        lcd_gateway_id_draw_row(2, line_ip);
+        lcd_gateway_id_draw_row(3, line_tok);
+#else
+        lcd_gateway_fr3d_dogm_row(0, line_app);
+        lcd_gateway_fr3d_dogm_row(1, line_wifi);
+        lcd_gateway_fr3d_dogm_row(2, line_ip);
+        lcd_gateway_fr3d_dogm_row(3, line_tok);
+#endif
+    }
+
+    if (ENCODER_CLICKED || encoderPosition != 0)
+    {
+        lcd_quick_feedback();
+        currentMenu = lcd_addonfr3d_menu;
+        encoderPosition = 0;
+        lcdDrawUpdate = 1;
+    }
+}
+
+static void lcd_addonfr3d_gateway_id_open(void)
+{
+    currentMenu = lcd_addonfr3d_gateway_id_screen;
+    encoderPosition = 0;
+    lcdDrawUpdate = 2;
+    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
+}
+
+static void lcd_addonfr3d_menu()
+{
+    START_MENU();
+    MENU_ITEM(back, MSG_CONTROL, lcd_control_menu);
+    MENU_ITEM(submenu, "Hall A3", lcd_addonfr3d_hall_a3_menu);
+    MENU_ITEM(function, "Gateway FR3D", lcd_addonfr3d_gateway_id_open);
+    END_MENU();
+}
+
 static void lcd_control_menu()
 {
     START_MENU();
     MENU_ITEM(back, MSG_MAIN, lcd_main_menu);
+    MENU_ITEM(submenu, "AddonFR3D", lcd_addonfr3d_menu);
     MENU_ITEM(submenu, MSG_TEMPERATURE, lcd_control_temperature_menu);
     
 #ifdef FILAMENT_SENSOR
     MENU_ITEM(submenu,MSG_FILAMENT_PID, lcd_control_Filament_PID_menu);
 #endif
     MENU_ITEM(submenu, MSG_MOTION, lcd_control_motion_menu);
+#ifndef DELTA
+    MENU_ITEM(submenu, MSG_SINFIN_MENU, lcd_sinfin_menu);
+#endif
 #ifdef DOGLCD
 //    MENU_ITEM_EDIT(int3, MSG_CONTRAST, &lcd_contrast, 0, 63);
     MENU_ITEM(submenu, MSG_CONTRAST, lcd_set_contrast);
@@ -984,7 +1601,7 @@ static void lcd_control_menu()
 #endif
 #ifdef EEPROM_SETTINGS
     MENU_ITEM(function, MSG_STORE_EPROM, Config_StoreSettings);
-    MENU_ITEM(function, MSG_LOAD_EPROM, Config_RetrieveSettings);
+    MENU_ITEM(function, MSG_LOAD_EPROM, lcd_control_load_eprom);
 #endif
     MENU_ITEM(function, MSG_RESTORE_FAILSAFE, Config_ResetDefault);
     END_MENU();
@@ -1013,7 +1630,13 @@ static void pid_autotune_action()
 	{
 	LCD_MESSAGEPGM(MSG_AUTOT_SEQU);
 	PID_autotune(absPreheatHotendTemp, 0, 5);  //run autotune with 5 cycles and temp= preheat config temp
-	WRITE(BEEPER,HIGH);
+	/* Antes quedaba BEEPER en HIGH sin bajarlo: pitido continuo y sensación de UI bloqueada. */
+#if BEEPER > 0
+	SET_OUTPUT(BEEPER);
+	WRITE(BEEPER, HIGH);
+	delay(80);
+	WRITE(BEEPER, LOW);
+#endif
 	LCD_MESSAGEPGM(MSG_AUTOT_COMPL);
 	lcd_return_to_control_temperature();
 	}
@@ -1081,7 +1704,8 @@ static void lcd_control_temperature_preheat_abs_settings_menu()
 {
     START_MENU();
     MENU_ITEM(back, MSG_TEMPERATURE, lcd_control_temperature_menu);
-    MENU_ITEM_EDIT(int3, MSG_HEATER, &absPreheatHotendTemp, 150, HEATER_0_MAXTEMP - 15);
+    /* absPreheatHotendTemp: valor del botón «Precalentar ABS», no target_temperature[0] en marcha. */
+    MENU_ITEM_EDIT(int3, MSG_PREHEAT_ABS_HOTEND_T, &absPreheatHotendTemp, 150, HEATER_0_MAXTEMP - 15);
     
     
 #if TEMP_SENSOR_BED != 0
@@ -1285,6 +1909,7 @@ void lcd_sdcard_menu()
         callbackFunc = callback;\
     }
 menu_edit_type(int, int3, itostr3, 1)
+menu_edit_type(int, int4, itostr4, 1)
 menu_edit_type(float, float22, ftostr22, 10)
 menu_edit_type(float, float3, ftostr3, 1)
 menu_edit_type(float, float32, ftostr32, 100)
@@ -1379,6 +2004,11 @@ static void menu_action_setting_edit_bool(const char* pstr, bool* ptr)
 {
     *ptr = !(*ptr);
 }
+static void menu_action_setting_edit_callback_bool(const char* pstr, bool* ptr, menuFunc_t callbackFunc)
+{
+    *ptr = !(*ptr);
+    (*callbackFunc)();
+}
 #endif//ULTIPANEL
 
 /** LCD API **/
@@ -1458,8 +2088,6 @@ void lcd_update(bool encoderClicked, bool encoderLongPressed)
         ENCODER_CLICKED = false;
     }
     
-    static unsigned long timeoutToStatus = 0;
-
     #ifdef LCD_HAS_SLOW_BUTTONS
     slow_buttons = lcd_implementation_read_slow_buttons(); // buttons which take too long to read in interrupt context
     #endif
@@ -1517,10 +2145,10 @@ void lcd_update(bool encoderClicked, bool encoderLongPressed)
             lcdDrawUpdate = 1;
             encoderPosition += encoderDiff / ENCODER_PULSES_PER_STEP;
             encoderDiff = 0;
-            timeoutToStatus = millis() + LCD_TIMEOUT_TO_STATUS;
+            lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
         }
         if (ENCODER_CLICKED)
-            timeoutToStatus = millis() + LCD_TIMEOUT_TO_STATUS;
+            lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
 #endif//ULTIPANEL
 
 #ifdef DOGLCD        // Changes due to different driver architecture of the DOGM display
@@ -1545,7 +2173,7 @@ void lcd_update(bool encoderClicked, bool encoderLongPressed)
 #endif
 
 #ifdef ULTIPANEL
-        if(timeoutToStatus < millis() && currentMenu != lcd_status_screen)
+        if(lcd_menu_timeout_deadline < millis() && currentMenu != lcd_status_screen)
         {
             lcd_return_to_status();
             lcdDrawUpdate = 2;

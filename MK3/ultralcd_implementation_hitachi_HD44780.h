@@ -417,7 +417,7 @@ static void lcd_implementation_status_screen()
     lcd.setCursor(10, 0); //Änderunge 31.05.2020
     lcd_printPGM(PSTR(MSG_DISPLAY_E));
     if((extrude_status & ES_SWITCH_SET) && (extrude_status & ES_HOT_SET))  //check if extruder motor switch is on
-       	lcd.print(ftostr21(extruder_rpm));  //convert to rpm
+       	lcd.print(ftostr21(extruder_rpm));  //show screw (sinfín) rpm
        else if(extrude_status & ES_HOT_SET)
        	lcd_printPGM(PSTR(MSG_DISPLAY_OFF));
        else
@@ -486,24 +486,47 @@ static void lcd_implementation_status_screen()
     lcd.setCursor(0, 1);
     //Check for filament sensor and show width
    #ifdef FILAMENT_SENSOR
-      lcd.print(MSG_DISPLAY_S);
-      //lcd.print(ftostr12(analog2widthFil()));
-      lcd.print(ftostr12(current_filwidth));
-      if (alt_cnt<5){
-         lcd_printPGM(PSTR(MSG_DISPLAY_AV));
-   lcd.print(ftostr12(avg_measured_filament_width));
-      };
-      if (alt_cnt>=5 && alt_cnt <10){       
-        lcd_printPGM(PSTR(MSG_DISPLAY_MaxWidth));
-        lcd.print(ftostr12(max_measured_filament_width));
-      };
-      if (alt_cnt>=10 && alt_cnt<15){
-        lcd_printPGM(PSTR(MSG_DISPLAY_MinWidth));
-        lcd.print(ftostr12(min_measured_filament_width));
-      };                      
-      alt_cnt = alt_cnt + 1;
-      if (alt_cnt==15)
-         alt_cnt=0;
+      char line2[21];
+#ifdef FR3D_CSV_TELEMETRY
+      /* S = sensor; Dlcd/Yprom = FIFO rapido / mediana 10 s CSV; M/A + tokens predictor */
+      int s_x1000 = (int)(current_filwidth * 1000.0f + 0.5f);
+      unsigned int d_lcd_x1000 = (unsigned int)fr3d_diam_fifo_avg_x1000;
+      unsigned int d_prom_x1000 = (unsigned int)fr3d_pred_median_10s_x1000;
+#else
+      int s_x1000 = (int)(current_filwidth * 1000.0f + 0.5f);
+      unsigned int d_lcd_x1000 = (unsigned int)(current_filwidth * 1000.0f + 0.5f);
+      unsigned int d_prom_x1000 = d_lcd_x1000;
+#endif
+      if (s_x1000 < 0) s_x1000 = 0;
+      if (s_x1000 > 9999) s_x1000 = 9999;
+      if (d_lcd_x1000 > 9999U) d_lcd_x1000 = 9999U;
+      if (d_prom_x1000 > 9999U) d_prom_x1000 = 9999U;
+
+      // A = Predictor Auto ON; - = Predictor Auto OFF
+      char mode_c = fr3d_pred_mode ? 'A' : '-';
+      // E+/E- = último ajuste predictor sobre sinfín; T+/T- = bloque; blank = sin acción
+      char tok0 = ' ';
+      char tok1 = ' ';
+      char adj0 = fr3d_pred_ui_adjust_char_0;
+      char sign_c = fr3d_pred_ui_sign_char;
+      if ((adj0 == 'E' || adj0 == 'T') && (sign_c == '+' || sign_c == '-')) {
+        tok0 = (adj0 == 'E') ? 'E' : LCD_STR_THERMOMETER[0];
+        tok1 = sign_c;
+      }
+
+      snprintf(
+        line2,
+        sizeof(line2),
+        "S%04d D%04u/%04u %c%c%c",
+        s_x1000,
+        d_lcd_x1000,
+        d_prom_x1000,
+        mode_c,
+        tok0,
+        tok1
+      );
+      line2[20] = '\0';
+      lcd.print(line2);
    #else
       lcd_printPGM(PSTR(""));   
    #endif   
@@ -674,6 +697,8 @@ static void lcd_implementation_drawmenu_setting_edit_generic_P(uint8_t row, cons
 }
 #define lcd_implementation_drawmenu_setting_edit_int3_selected(row, pstr, pstr2, data, minValue, maxValue) lcd_implementation_drawmenu_setting_edit_generic(row, pstr, '>', itostr3(*(data)))
 #define lcd_implementation_drawmenu_setting_edit_int3(row, pstr, pstr2, data, minValue, maxValue) lcd_implementation_drawmenu_setting_edit_generic(row, pstr, ' ', itostr3(*(data)))
+#define lcd_implementation_drawmenu_setting_edit_int4_selected(row, pstr, pstr2, data, minValue, maxValue) lcd_implementation_drawmenu_setting_edit_generic(row, pstr, '>', itostr4(*(data)))
+#define lcd_implementation_drawmenu_setting_edit_int4(row, pstr, pstr2, data, minValue, maxValue) lcd_implementation_drawmenu_setting_edit_generic(row, pstr, ' ', itostr4(*(data)))
 #define lcd_implementation_drawmenu_setting_edit_float3_selected(row, pstr, pstr2, data, minValue, maxValue) lcd_implementation_drawmenu_setting_edit_generic(row, pstr, '>', ftostr3(*(data)))
 #define lcd_implementation_drawmenu_setting_edit_float3(row, pstr, pstr2, data, minValue, maxValue) lcd_implementation_drawmenu_setting_edit_generic(row, pstr, ' ', ftostr3(*(data)))
 #define lcd_implementation_drawmenu_setting_edit_float32_selected(row, pstr, pstr2, data, minValue, maxValue) lcd_implementation_drawmenu_setting_edit_generic(row, pstr, '>', ftostr32(*(data)))

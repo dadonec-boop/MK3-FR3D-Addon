@@ -9,13 +9,26 @@
  the Free Software Foundation, either version 3 of the License, or
  (at your option) any later version.
 
- This program is distributed in the hope that it will be useful,
+ This program is distributed in the hope that it will be useful,                                                                                
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  GNU General Public License for more details.
 
  You should have received a copy of the GNU General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+ ---------------------------------------------------------------------------
+ Modified by FR3D Addon — Claudio Dadone — 14 Jul 2026
+
+ This firmware incorporates diameter measurement and predictive diameter
+ control (manual / automatic modes).
+
+ Prepared for optional remote control via Raspberry Pi Zero 2 W gateway
+ and web app (MK3s + FR3D Addon). That host/app stack is not published
+ in this firmware repository.
+
+ For more information: http://fr3d-addon.web.app/
+ ---------------------------------------------------------------------------
  */
 
 /*
@@ -50,6 +63,8 @@
 #include "cardreader.h"
 #include "watchdog.h"
 #include "ConfigurationStore.h"
+#include "fr3d_telemetry.h"
+#include "fr3d_gateway_id.h"
 #include "language.h"
 #include "pins_arduino.h"
 #include "math.h"
@@ -68,7 +83,8 @@
 #include <SPI.h>
 #endif
 
-#define VERSION_STRING  "1.0.0"
+#define VERSION_STRING  "1.1.0"
+#define FR3D_MK3_FW_DATE "2026-04-27"
 
 // look here for descriptions of G-codes: http://linuxcnc.org/handbook/gcode/g-code.html
 // http://objects.reprap.org/wiki/Mendel_User_Manual:_RepRapGCodes
@@ -217,6 +233,15 @@ int default_winder_speed = DEFAULT_WINDER_SPEED;
 int injectionTimeSeconds = DEFAULT_INJECTION_TIME;
 unsigned long injectionModeStartMillis = -1;
 int winder_rpm_factor = DEFAULT_WINDER_RPM_FACTOR;
+uint8_t sinfin_compression_mode = DEFAULT_SINFIN_COMPRESSION;
+#ifdef FR3D_SERIAL_HOST_DISABLE_GM
+bool fr3d_serial_filter_msgs = DEFAULT_FR3D_SERIAL_FILTER_MSGS_ON;
+#ifndef FR3D_SERIAL_HOST_ONLY_COMPACT
+  /* 1: por USB solo acepta comandos compactos FR3D.
+     0: bloquea solo G/M (comportamiento anterior). */
+  #define FR3D_SERIAL_HOST_ONLY_COMPACT 1
+#endif
+#endif
 unsigned long starttime=0;
 unsigned long stoptime=0;
 
@@ -588,6 +613,9 @@ void setup()
   setup_killpin();
   setup_powerhold();
   MYSERIAL.begin(BAUDRATE);
+  // NOTE: this firmware branch uses custom serial abstraction (MSerial/MYSERIAL).
+  // UART1 for ESP32 is reserved in pinout, but its init is deferred until dedicated
+  // serial implementation is added for this codebase.
   SERIAL_PROTOCOLLNPGM("start");
   SERIAL_ECHO_START;
 
@@ -624,9 +652,18 @@ void setup()
   }
 
   // loads data from EEPROM if available else uses defaults (and resets step acceleration rate)
-  Config_RetrieveSettings();
+#ifdef EEPROM_SETTINGS
+  Config_RetrieveSettings(false); /* no restaurar objetivo hotend al encender; usar Cargar/M501 */
+#else
+  Config_ResetDefault();
+#endif
+  fr3d_gwid_init();
 
   tp_init();    // Initialize temperature loop
+#if defined(EEPROM_SETTINGS) && !defined(DELTA)
+  if (target_temperature[0] > 0)
+    setWatch();
+#endif
   plan_init();  // Initialize planner;
   watchdog_init();
   st_init();    // Initialize stepper, this enables interrupts!
@@ -725,8 +762,11 @@ void loop()
   manage_heater();
   manage_inactivity();
   checkHitEndstops();
+  fr3d_diam_poll_samples();
   lcd_update(encoderClicked, encoderLongPressed);
-  
+
+  fr3d_csv_telemetry_poll();
+
   //FMM calculate max, min, and average filament width
 
   timebuff=millis();
@@ -859,11 +899,14 @@ void loop()
 
   
   //FMM generate extruder motion based on LCD inputs
-  
+  #if defined(EXTRUDER_MOTOR_ON_OFF_PIN) && EXTRUDER_MOTOR_ON_OFF_PIN > -1
   if (READ(EXTRUDER_MOTOR_ON_OFF_PIN))  //check if pin is high (=off)
 	  extrude_status=extrude_status & ES_SWITCH_CLEAR;
   else
 	  extrude_status= extrude_status | ES_SWITCH_SET;
+  #else
+  extrude_status = extrude_status | ES_SWITCH_SET;  // sin interruptor físico: equivalente a "motor habilitado"
+  #endif
   
   if(extruderTemp > EXTRUDE_MINTEMP)  //check if extruder at min heated temp
 	  extrude_status=extrude_status | ES_HOT_SET;
@@ -1063,6 +1106,17 @@ void loop()
   
 }
 
+/** Numeracion Marlin N<num> solo si N va al inicio (tras espacios) seguido de digito.
+ *  strchr('N') en toda la linea disparaba falso positivo con el token compacto PNAO (P-N-A-O). */
+static bool line_starts_with_host_line_number(const char *buf)
+{
+  const char *p = buf;
+  while (*p == ' ' || *p == '\t') p++;
+  char c0 = *p;
+  if (c0 >= 'a' && c0 <= 'z') c0 = (char)(c0 - 'a' + 'A');
+  return (c0 == 'N' && p[1] >= '0' && p[1] <= '9');
+}
+
 void get_command()
 {
   while( MYSERIAL.available() > 0  && buflen < BUFSIZE) {
@@ -1080,9 +1134,11 @@ void get_command()
       if(!comment_mode){
         comment_mode = false; //for new command
         fromsd[bufindw] = false;
-        if(strchr(cmdbuffer[bufindw], 'N') != NULL)
+        if(line_starts_with_host_line_number(cmdbuffer[bufindw]))
         {
           strchr_pointer = strchr(cmdbuffer[bufindw], 'N');
+          if (strchr_pointer == NULL)
+            strchr_pointer = strchr(cmdbuffer[bufindw], 'n');
           gcode_N = (strtol(&cmdbuffer[bufindw][strchr_pointer - cmdbuffer[bufindw] + 1], NULL, 10));
           if(gcode_N != gcode_LastN+1 && (strstr_P(cmdbuffer[bufindw], PSTR("M110")) == NULL) ) {
             SERIAL_ERROR_START;
@@ -1632,6 +1688,1643 @@ void refresh_cmd_timeout(void)
   } //retract
 #endif //FWRETRACT
 
+#ifdef FR3D_SERIAL_HOST_DISABLE_GM
+static bool fr3d_compact_last_error;
+
+/** Mayúscula ASCII para comandos compactos (host acepta mayúsculas y minúsculas). */
+static char fr3d_uc(char c)
+{
+  if (c >= 'a' && c <= 'z') return (char)(c - 'a' + 'A');
+  return c;
+}
+
+/** Compara linea con palabra en mayusculas; fin de comando o espacio. */
+static bool fr3d_cmd_word(const char *p, const char *uword)
+{
+  for (; *uword; ++p, ++uword) {
+    if (fr3d_uc(*p) != *uword)
+      return false;
+  }
+  /* \r puede quedar antes del \0 según el host (CRLF). */
+  return *p == '\0' || *p == ' ' || *p == '\t' || *p == '\r';
+}
+
+/** Compara prefijo de comando (sin exigir separador al final). */
+static bool fr3d_cmd_prefix(const char *p, const char *uword)
+{
+  for (; *uword; ++p, ++uword) {
+    if (fr3d_uc(*p) != *uword)
+      return false;
+  }
+  return true;
+}
+
+static bool fr3d_parse_tail_float(const char *p, const uint8_t cmd_len, float *out_v)
+{
+  char *q = (char *)(p + cmd_len);
+  while (*q == ' ' || *q == '\t') q++;
+  if (*q == '\0') return false;
+  char *endp = NULL;
+  const float vf = (float)strtod(q, &endp);
+  if (endp == q) return false;
+  while (*endp == ' ' || *endp == '\t') endp++;
+  if (*endp != '\0') return false;
+  *out_v = vf;
+  return true;
+}
+
+static bool fr3d_parse_tail_long(const char *p, const uint8_t cmd_len, long *out_v)
+{
+  char *q = (char *)(p + cmd_len);
+  while (*q == ' ' || *q == '\t') q++;
+  if (*q == '\0') return false;
+  char *endp = NULL;
+  const long lv = strtol(q, &endp, 10);
+  if (endp == q) return false;
+  while (*endp == ' ' || *endp == '\t') endp++;
+  if (*endp != '\0') return false;
+  *out_v = lv;
+  return true;
+}
+
+/** Salta prefijo opcional N<num> (numeración Marlin) y espacios. */
+static void fr3d_skip_line_number_prefix(char **pp)
+{
+  char *p = *pp;
+  if (fr3d_uc(*p) != 'N')
+    return;
+  char *q = p + 1;
+  if (*q < '0' || *q > '9')
+    return;
+  while (*q >= '0' && *q <= '9')
+    q++;
+  p = q;
+  while (*p == ' ' || *p == '\t')
+    p++;
+  *pp = p;
+}
+
+/** Línea = PAUT / PNAO / PMAN (alias); PMAN contiene M y puede confundir strchr si el compacto falla. */
+static bool fr3d_line_is_compact_pman_or_paut(void)
+{
+  char *q = cmdbuffer[bufindr];
+  while (*q == ' ' || *q == '\t') q++;
+  fr3d_skip_line_number_prefix(&q);
+  return fr3d_cmd_word(q, "PAUT") || fr3d_cmd_word(q, "PNAO") || fr3d_cmd_word(q, "PMAN");
+}
+
+static void fr3d_compact_do_er(void)
+{
+#ifdef ULTRA_LCD
+  lcd_extruder_resume();
+#else
+  puller_feedrate = puller_feedrate_default;
+  extrude_status = extrude_status | ES_ENABLE_SET;
+  winderSpeed = default_winder_speed * 255 / winder_rpm_factor;
+#if defined(CONTROLLERFAN_PIN) && CONTROLLERFAN_PIN > -1
+  digitalWrite(CONTROLLERFAN_PIN, 1);
+#endif
+#if defined(CONTROLLERFAN2_PIN) && CONTROLLERFAN2_PIN > -1
+  digitalWrite(CONTROLLERFAN2_PIN, 1);
+#endif
+  starttime = millis();
+  extrude_status = extrude_status | ES_STATS_SET;
+#endif
+}
+
+static void fr3d_compact_do_es(void)
+{
+#ifdef ULTRA_LCD
+  lcd_extruder_pause();
+#else
+  extrude_status = extrude_status & ES_ENABLE_CLEAR_NO_AUTO;
+  puller_feedrate_default = puller_feedrate;
+  injectionModeStartMillis = -1;
+#if defined(CONTROLLERFAN_PIN) && CONTROLLERFAN_PIN > -1
+  digitalWrite(CONTROLLERFAN_PIN, 0);
+#endif
+  extrude_status = extrude_status & ES_STATS_CLEAR;
+#endif
+}
+
+static void fr3d_compact_do_pa(bool alias_paut)
+{
+  if (extrude_status & ES_HOT_SET) {
+    extrude_status |= ES_AUTO_SET;
+    SERIAL_ECHO_START;
+    if (alias_paut)
+      SERIAL_ECHOLNPGM("ok PAUT");
+    else
+      SERIAL_ECHOLNPGM("ok PA");
+  } else {
+    SERIAL_ECHO_START;
+    if (alias_paut)
+      SERIAL_ECHOLNPGM("ok PAUT nohot");
+    else
+      SERIAL_ECHOLNPGM("ok PA nohot");
+  }
+}
+
+static void fr3d_compact_apply_manual_pull(void)
+{
+  extrude_status &= ES_AUTO_CLEAR;
+}
+
+/** alias: 0=PM, 1=ok PMAN (obsoleto), 2=ok PNAO (recomendado, sin letra M en el token). */
+static void fr3d_compact_do_pm(int alias)
+{
+  fr3d_compact_apply_manual_pull();
+  SERIAL_ECHO_START;
+  if (alias == 2)
+    SERIAL_ECHOLNPGM("ok PNAO");
+  else if (alias == 1)
+    SERIAL_ECHOLNPGM("ok PMAN");
+  else
+    SERIAL_ECHOLNPGM("ok PM");
+}
+
+static void fr3d_compact_do_cooldown(void)
+{
+  setTargetHotend0(0);
+  setTargetHotend1(0);
+  setTargetHotend2(0);
+  setTargetBed(0);
+#ifdef ULTRA_LCD
+  LCD_MESSAGEPGM(MSG_EX_COOL);
+#endif
+}
+
+float fr3d_hall_adc_read_now()
+{
+#if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+  /* El Hall se muestrea en TIMER0_COMPB (temperature.cpp): leer aquí sin tocar ADMUX ni cli()
+     largo, porque bloquear TIMER0 cortaba el soft-PWM del hotend y no llegaba a temperatura. */
+  uint16_t v;
+  CRITICAL_SECTION_START;
+  v = fr3d_hall_adc_oversample;
+  CRITICAL_SECTION_END;
+  return (float)v;
+#else
+  return 0.0f;
+#endif
+}
+
+static bool process_fr3d_compact_line()
+{
+  char *p = cmdbuffer[bufindr];
+  while (*p == ' ' || *p == '\t') p++;
+  fr3d_skip_line_number_prefix(&p);
+
+  fr3d_compact_last_error = false;
+
+  if (fr3d_gwid_process_serial(p))
+    return true;
+
+  if (fr3d_uc(p[0]) == 'H' && fr3d_uc(p[1]) == 'E' && fr3d_uc(p[2]) == 'L' && fr3d_uc(p[3]) == 'P'
+      && (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err HELP extra");
+      return true;
+    }
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok HELP");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" HELP  lista de comandos (host compacto)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" WRY   firma del equipo");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" GWID  WiFi+token+ip+cloud Pi (GWID,<wifi>[,<tok8>[,<ipv4>[,ONL|OFFL]]]] / GWID?)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" GWCLR borrar MAC gateway (desconexion Pi)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" QUERY estado completo (R,T,F,PR,SW,SWmin,SWmid,SWmax,PRED*,ES)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("       mayus/minus indistinto");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" R<X.X>  RPM extrusor 0-40 rpm");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" T<XXX>  temperatura objetivo 0-190 grados");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" F<XXX>  winder/ventilador %  0-100 %");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" START  start extrusion");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" STOP   stop extrusion");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PAUT   pulling automatico");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PNAO   pulling manual (recomendado; PMAN=alias obsoleto)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM(" PR<rpm> pulling RPM manual 0-");
+    SERIAL_ECHO(PULLER_RPM_MAX);
+    SERIAL_ECHOLNPGM(" (PNAO + HOT; ignora nohot/auto)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" SWMID<mm> diametro objetivo sensor (0.0-7.55)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" SWMIN<mm> umbral minimo sensor (0.0-7.55)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" SWMAX<mm> umbral maximo sensor (0.0-7.55)");
+    SERIAL_ECHOLNPGM(" D170<adc> calibracion A3 para patron 1.70 mm");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" D175<adc> calibracion A3 para patron 1.75 mm");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" D180<adc> calibracion A3 para patron 1.80 mm");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" DOFF<mm> offset diametro Hall A3 (-0.20..0.20)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" C170/C175/C180 capturar ADC actual A3 para patron");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" QUERY incluye A3,<adc> lectura cruda Hall A3; DLCD,<mm> diametro LCD (D)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" DIAMQ solo DLCD (diametro LCD campo D)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PREDQ estado predictor (enable/mode/parametros)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PREDEN<0|1> predictor OFF/ON");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PREDMODE<0|1> 0=manual 1=automatico");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PREDTGT/PREDDB/PREDTM/PREDTRNG/PREDRRNG/PREDDTRNG tunning");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PREDDRRNG/PREDKR/PREDKT/PREDMARG/PREDSETTLE/PREDW");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PREDCYCLE<5|10> CSV/predictor cycle seconds");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" DIAMDEBUG<0|1>  CSV diam debug extra OFF/ON");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" COOL   cooldown (temps a 0)");
+#ifdef FR3D_SERIAL_HOST_DISABLE_GM
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" MF<0|1>  filtrar linea ok final");
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" LN<mm>  longitud corte filamento 1000-999000");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" SCLEAR  reset estadisticas/contador de metros");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" IN<s>  tiempo inyeccion 1-180");
+#ifndef DELTA
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" SF<0|1>  sinfin 0=alta 1=baja");
+#endif
+#ifdef EEPROM_SETTINGS
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" MS    grabar EEPROM");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" ML    cargar EEPROM");
+#endif
+#if (EXTRUDERS > 1) && (TEMP_SENSOR_1 != 0)
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" H1<T>  temp hotend 1 (C)");
+#endif
+#if (EXTRUDERS > 2) && (TEMP_SENSOR_2 != 0)
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" H2<T>  temp hotend 2 (C)");
+#endif
+#if TEMP_SENSOR_BED != 0
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" HB<T>  temp cama (C)");
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" Comandos no-FR3D por USB: bloqueados");
+#ifdef FR3D_CSV_TELEMETRY
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" ST    sync muestreo CSV (+10s desde ahora)");
+#endif
+    return true;
+  }
+
+  if (fr3d_cmd_word(p, "WRY")) {
+    char *r = p + 3;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err WRY extra");
+      return true;
+    }
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("SIG,MK3S+FR3D,1.1.0,2026-04-27");
+    return true;
+  }
+
+  if (fr3d_cmd_word(p, "QUERY")) {
+    char *r = p + 5;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err QUERY extra");
+      return true;
+    }
+
+    /* Orden: ES al final para que el host recolecte PR/SW antes del cierre en echo:ES,. */
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("R,");  SERIAL_ECHO(extruder_rpm_set);      SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("T,");  SERIAL_ECHO(target_temperature[0]); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("F,");  SERIAL_ECHO(default_winder_speed);  SERIAL_ECHOLNPGM(",");
+    {
+      float pc_q = pcirc;
+      if (pc_q < 1.0f) pc_q = DEFAULT_PULLER_WHEEL_CIRC;
+      const float pr_q = puller_feedrate * (60.0f / pc_q);
+      SERIAL_ECHO_START; SERIAL_ECHOPGM("PR,"); SERIAL_ECHO(pr_q); SERIAL_ECHOLNPGM(",");
+    }
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("SW,"); SERIAL_ECHO(current_filwidth); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("SWmin,"); SERIAL_ECHO(sensorRunoutMin); SERIAL_ECHOLNPGM(",");
+    /* SWmid = Ø objetivo (menú Filament / EEPROM), no el punto medio entre SWmin/SWmax (ventana runout). */
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("SWmid,"); SERIAL_ECHO(filament_width_desired); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("SWmax,"); SERIAL_ECHO(sensorRunoutMax); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DH,"); SERIAL_ECHO(1); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("A3,"); SERIAL_ECHO(fr3d_hall_adc_read_now()); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D170,"); SERIAL_ECHO(fr3d_hall_cal_adc_170); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D175,"); SERIAL_ECHO(fr3d_hall_cal_adc_175); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D180,"); SERIAL_ECHO(fr3d_hall_cal_adc_180); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DOFF,"); SERIAL_PROTOCOL_F(fr3d_hall_diam_offset_mm, 3); SERIAL_ECHOLNPGM(",");
+#ifdef FR3D_CSV_TELEMETRY
+    fr3d_diam_poll_samples();
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DLCD,"); SERIAL_PROTOCOL_F(fr3d_diam_fifo_avg_x1000 / 1000.0f, 3); SERIAL_ECHOLNPGM(",");
+#endif
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDEN,"); SERIAL_ECHO((int)fr3d_pred_enabled); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMODE,"); SERIAL_ECHO((int)fr3d_pred_mode); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDW,"); SERIAL_ECHO((int)fr3d_pred_window_size); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDTGT,"); SERIAL_PROTOCOL_F(fr3d_pred_target_diam_mm, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDDB,"); SERIAL_PROTOCOL_F(fr3d_pred_deadband_half_mm, 4); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDTM,"); SERIAL_PROTOCOL_F(fr3d_pred_temp_match_max_c, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDTRNG,"); SERIAL_ECHO(fr3d_pred_t_min); SERIAL_ECHOPGM(","); SERIAL_ECHO(fr3d_pred_t_max); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDRRNG,"); SERIAL_PROTOCOL_F(fr3d_pred_r_min, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_r_max, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDDTRNG,"); SERIAL_PROTOCOL_F(fr3d_pred_delta_t_min, 3); SERIAL_ECHOPGM(","); SERIAL_ECHO((int)fr3d_pred_delta_t_max); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDDRRNG,"); SERIAL_PROTOCOL_F(fr3d_pred_delta_r_min, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_delta_r_max, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDKR,"); SERIAL_PROTOCOL_F(fr3d_pred_k_span_r, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_k_err_r, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDKT,"); SERIAL_PROTOCOL_F(fr3d_pred_k_span_t, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_k_err_t, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMARG,"); SERIAL_PROTOCOL_F(fr3d_pred_r_switch_margin, 3); SERIAL_ECHOPGM(","); SERIAL_ECHO((int)fr3d_pred_t_switch_margin); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDSETTLE,"); SERIAL_ECHO((int)fr3d_pred_t_settle_fusions); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDCYCLE,"); SERIAL_ECHO((int)fr3d_csv_cycle_s); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMJDB,"); SERIAL_PROTOCOL_F(fr3d_diam_jump_debounce_mm, 4); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMJPM,"); SERIAL_PROTOCOL_F(fr3d_diam_pending_match_mm, 4); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMDEBUG,"); SERIAL_ECHO((int)fr3d_diam_debug_csv_enabled); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ES,"); SERIAL_ECHO((extrude_status & ES_ENABLE_SET) ? 1 : 0); SERIAL_ECHOLNPGM(",");
+    return true;
+  }
+
+  if (fr3d_cmd_word(p, "START")) {
+    char *r = p + 5;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err START extra");
+      return true;
+    }
+    fr3d_compact_do_er();
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok START");
+    return true;
+  }
+  if (fr3d_cmd_word(p, "STOP")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err STOP extra");
+      return true;
+    }
+    fr3d_compact_do_es();
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok STOP");
+    return true;
+  }
+  if (fr3d_cmd_word(p, "COOL")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err COOL extra");
+      return true;
+    }
+    fr3d_compact_do_cooldown();
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok COOL");
+    return true;
+  }
+  if (fr3d_cmd_word(p, "PAUT")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err PAUT extra");
+      return true;
+    }
+    fr3d_compact_do_pa(true);
+    return true;
+  }
+  if (fr3d_cmd_word(p, "PNAO")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err PNAO extra");
+      return true;
+    }
+    fr3d_compact_do_pm(2);
+    return true;
+  }
+  if (fr3d_cmd_word(p, "PMAN")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err PMAN extra");
+      return true;
+    }
+    fr3d_compact_do_pm(1);
+    return true;
+  }
+
+  /* PR<rpm> — pulling RPM manual 0–PULLER_RPM_MAX (requiere PNAO/PMAN + HOT; rechaza PAUT). */
+  // Important: avoid matching predictor commands (PRED*) as PR.
+  if (fr3d_uc(p[0]) == 'P' && fr3d_uc(p[1]) == 'R' && fr3d_uc(p[2]) != 'E') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err PR empty");
+      return true;
+    }
+    char *endp = NULL;
+    const float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err PR parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err PR extra");
+      return true;
+    }
+    float rpm = vf;
+    if (rpm < 0.0f) rpm = 0.0f;
+    if (rpm > PULLER_RPM_MAX) rpm = PULLER_RPM_MAX;
+    // Bobinador: permitir PR con hotend en 0 °C (sin calentamiento).
+    // En extrusión normal (T objetivo > 0), se mantiene la protección "nohot".
+    if (!(extrude_status & ES_HOT_SET) && degTargetHotend(active_extruder) > 0) {
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("ok PR nohot");
+      return true;
+    }
+    if (extrude_status & ES_AUTO_SET) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err PR auto");
+      return true;
+    }
+    float pc = pcirc;
+    if (pc < 1.0f) pc = DEFAULT_PULLER_WHEEL_CIRC;
+    const float mm_s = rpm * (pc / 60.0f);
+    puller_feedrate = mm_s;
+    puller_feedrate_default = mm_s;
+    puller_feedrate_last = mm_s;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok PR ");
+    SERIAL_ECHOLN(rpm);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'S' && fr3d_uc(p[1]) == 'W' && fr3d_uc(p[2]) == 'M' && fr3d_uc(p[3]) == 'I' && fr3d_uc(p[4]) == 'D') {
+    char *q = p + 5;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMID empty");
+      return true;
+    }
+    char *endp = NULL;
+    float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMID parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMID extra");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 7.55f) vf = 7.55f;
+    filament_width_desired = vf;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok SWMID ");
+    SERIAL_ECHOLN(filament_width_desired);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'S' && fr3d_uc(p[1]) == 'W' && fr3d_uc(p[2]) == 'M' && fr3d_uc(p[3]) == 'I' && fr3d_uc(p[4]) == 'N') {
+    char *q = p + 5;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMIN empty");
+      return true;
+    }
+    char *endp = NULL;
+    float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMIN parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMIN extra");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 7.55f) vf = 7.55f;
+    sensorRunoutMin = vf;
+    if (sensorRunoutMin > sensorRunoutMax) {
+      float tmp = sensorRunoutMin;
+      sensorRunoutMin = sensorRunoutMax;
+      sensorRunoutMax = tmp;
+    }
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok SWMIN ");
+    SERIAL_ECHOLN(sensorRunoutMin);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'S' && fr3d_uc(p[1]) == 'W' && fr3d_uc(p[2]) == 'M' && fr3d_uc(p[3]) == 'A' && fr3d_uc(p[4]) == 'X') {
+    char *q = p + 5;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMAX empty");
+      return true;
+    }
+    char *endp = NULL;
+    float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMAX parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SWMAX extra");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 7.55f) vf = 7.55f;
+    sensorRunoutMax = vf;
+    if (sensorRunoutMin > sensorRunoutMax) {
+      float tmp = sensorRunoutMin;
+      sensorRunoutMin = sensorRunoutMax;
+      sensorRunoutMax = tmp;
+    }
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok SWMAX ");
+    SERIAL_ECHOLN(sensorRunoutMax);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == 'H') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DH empty");
+      return true;
+    }
+    char *endp = NULL;
+    const long vf = strtol(q, &endp, 10);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DH parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DH extra");
+      return true;
+    }
+    if (vf != 0 && vf != 1) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DH range");
+      return true;
+    }
+    (void)vf;
+    fr3d_hall_diameter_enabled = 1;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok DH ");
+    SERIAL_ECHOLN(1);
+    return true;
+  }
+
+  if (fr3d_cmd_word(p, "DIAMQ")) {
+    char *r = p + 5;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DIAMQ extra");
+      return true;
+    }
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok DIAMQ");
+#ifdef FR3D_CSV_TELEMETRY
+    fr3d_diam_poll_samples();
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DLCD,"); SERIAL_PROTOCOL_F(fr3d_diam_fifo_avg_x1000 / 1000.0f, 3); SERIAL_ECHOLNPGM(",");
+#endif
+    return true;
+  }
+
+  if (fr3d_cmd_word(p, "PREDQ")) {
+    char *r = p + 5;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err PREDQ extra");
+      return true;
+    }
+    SERIAL_ECHO_START; SERIAL_ECHOLNPGM("ok PREDQ");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDEN,"); SERIAL_ECHO((int)fr3d_pred_enabled); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMODE,"); SERIAL_ECHO((int)fr3d_pred_mode); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDW,"); SERIAL_ECHO((int)fr3d_pred_window_size); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDTGT,"); SERIAL_PROTOCOL_F(fr3d_pred_target_diam_mm, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDDB,"); SERIAL_PROTOCOL_F(fr3d_pred_deadband_half_mm, 4); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDTM,"); SERIAL_PROTOCOL_F(fr3d_pred_temp_match_max_c, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDTRNG,"); SERIAL_ECHO(fr3d_pred_t_min); SERIAL_ECHOPGM(","); SERIAL_ECHO(fr3d_pred_t_max); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDRRNG,"); SERIAL_PROTOCOL_F(fr3d_pred_r_min, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_r_max, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDDTRNG,"); SERIAL_PROTOCOL_F(fr3d_pred_delta_t_min, 3); SERIAL_ECHOPGM(","); SERIAL_ECHO((int)fr3d_pred_delta_t_max); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMJDB,"); SERIAL_PROTOCOL_F(fr3d_diam_jump_debounce_mm, 4); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMJPM,"); SERIAL_PROTOCOL_F(fr3d_diam_pending_match_mm, 4); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMDEBUG,"); SERIAL_ECHO((int)fr3d_diam_debug_csv_enabled); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDCYCLE,"); SERIAL_ECHO((int)fr3d_csv_cycle_s); SERIAL_ECHOLNPGM(",");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDOWN")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 7, &lv) || (lv != 0 && lv != 1)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDOWN");
+      return true;
+    }
+    (void)lv;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDOWN "); SERIAL_ECHOLN(1);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDEN")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 6, &lv) || (lv != 0 && lv != 1)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDEN");
+      return true;
+    }
+    fr3d_pred_enabled = (uint8_t)lv;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDEN "); SERIAL_ECHOLN((int)fr3d_pred_enabled);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDMODE")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 8, &lv) || (lv != 0 && lv != 1)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDMODE");
+      return true;
+    }
+    fr3d_pred_mode = (uint8_t)lv;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDMODE "); SERIAL_ECHOLN((int)fr3d_pred_mode);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDCYCLE")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 9, &lv) || (lv != 5 && lv != 10)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDCYCLE");
+      return true;
+    }
+    fr3d_csv_cycle_s = (uint8_t)lv;
+#ifdef FR3D_CSV_TELEMETRY
+    fr3d_csv_sync_sample_timer();
+#endif
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDCYCLE "); SERIAL_ECHOLN((int)fr3d_csv_cycle_s);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDTGT")) {
+    float vf = 0.0f;
+    if (!fr3d_parse_tail_float(p, 7, &vf)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDTGT");
+      return true;
+    }
+    if (vf < 0.5f) vf = 0.5f;
+    if (vf > 7.55f) vf = 7.55f;
+    fr3d_pred_target_diam_mm = vf;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDTGT "); SERIAL_PROTOCOL_F(fr3d_pred_target_diam_mm, 3); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDDB")) {
+    float vf = 0.0f;
+    if (!fr3d_parse_tail_float(p, 6, &vf)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDDB");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 0.20f) vf = 0.20f;
+    fr3d_pred_deadband_half_mm = vf;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDDB "); SERIAL_PROTOCOL_F(fr3d_pred_deadband_half_mm, 4); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "DIAMJDB")) {
+    float vf = 0.0f;
+    if (!fr3d_parse_tail_float(p, 7, &vf)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err DIAMJDB");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 0.5f) vf = 0.5f;
+    vf = ((float)((long)(vf * 1000.0f + 0.5f))) / 1000.0f;
+    fr3d_diam_jump_debounce_mm = vf;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok DIAMJDB "); SERIAL_PROTOCOL_F(fr3d_diam_jump_debounce_mm, 4); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "DIAMJPM")) {
+    float vf = 0.0f;
+    if (!fr3d_parse_tail_float(p, 7, &vf)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err DIAMJPM");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 0.2f) vf = 0.2f;
+    vf = ((float)((long)(vf * 1000.0f + 0.5f))) / 1000.0f;
+    fr3d_diam_pending_match_mm = vf;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok DIAMJPM "); SERIAL_PROTOCOL_F(fr3d_diam_pending_match_mm, 4); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "DIAMDEBUG")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 9, &lv) || (lv != 0 && lv != 1)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err DIAMDEBUG");
+      return true;
+    }
+    fr3d_diam_debug_csv_enabled = (uint8_t)lv;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok DIAMDEBUG "); SERIAL_ECHOLN((int)fr3d_diam_debug_csv_enabled);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDTM")) {
+    float vf = 0.0f;
+    if (!fr3d_parse_tail_float(p, 6, &vf)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDTM");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 20.0f) vf = 20.0f;
+    fr3d_pred_temp_match_max_c = vf;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDTM "); SERIAL_PROTOCOL_F(fr3d_pred_temp_match_max_c, 3); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDTRNG")) {
+    char *q = p + 8;
+    while (*q == ' ' || *q == '\t') q++;
+    char *endp = NULL;
+    const long tmin = strtol(q, &endp, 10);
+    if (endp == q || *endp != ',') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDTRNG");
+      return true;
+    }
+    q = endp + 1;
+    const long tmax = strtol(q, &endp, 10);
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (endp == q || *endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDTRNG");
+      return true;
+    }
+    long a = tmin, b = tmax;
+    if (a > b) { long tmp = a; a = b; b = tmp; }
+    if (a < 0) a = 0;
+    if (b > 300) b = 300;
+    fr3d_pred_t_min = (int16_t)a;
+    fr3d_pred_t_max = (int16_t)b;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDTRNG "); SERIAL_ECHO(fr3d_pred_t_min); SERIAL_ECHOPGM(","); SERIAL_ECHOLN(fr3d_pred_t_max);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDRRNG")) {
+    char *q = p + 8;
+    while (*q == ' ' || *q == '\t') q++;
+    char *endp = NULL;
+    float rmin = (float)strtod(q, &endp);
+    if (endp == q || *endp != ',') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDRRNG");
+      return true;
+    }
+    q = endp + 1;
+    float rmax = (float)strtod(q, &endp);
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (endp == q || *endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDRRNG");
+      return true;
+    }
+    if (rmin > rmax) { float tmp = rmin; rmin = rmax; rmax = tmp; }
+    if (rmin < 0.0f) rmin = 0.0f;
+    if (rmax > EXTRUDER_RPM_MAX) rmax = EXTRUDER_RPM_MAX;
+    fr3d_pred_r_min = rmin;
+    fr3d_pred_r_max = rmax;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDRRNG "); SERIAL_PROTOCOL_F(fr3d_pred_r_min, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_r_max, 3); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDDTRNG")) {
+    char *q = p + 9;
+    while (*q == ' ' || *q == '\t') q++;
+    char *endp = NULL;
+    float dtmin = (float)strtod(q, &endp);
+    if (endp == q || *endp != ',') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDDTRNG");
+      return true;
+    }
+    q = endp + 1;
+    const long dtmax = strtol(q, &endp, 10);
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (endp == q || *endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDDTRNG");
+      return true;
+    }
+    long b = dtmax;
+    if (dtmin < 0.0f) dtmin = 0.0f;
+    if (b < 0) b = 0;
+    if (b > 20) b = 20;
+    fr3d_pred_delta_t_min = dtmin;
+    fr3d_pred_delta_t_max = (uint8_t)b;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDDTRNG "); SERIAL_PROTOCOL_F(fr3d_pred_delta_t_min, 3); SERIAL_ECHOPGM(","); SERIAL_ECHOLN((int)fr3d_pred_delta_t_max);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDW")) {
+    fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDW "); SERIAL_ECHOLN((int)fr3d_pred_window_size);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDDRRNG")) {
+    char *q = p + 9;
+    while (*q == ' ' || *q == '\t') q++;
+    char *endp = NULL;
+    float drmin = (float)strtod(q, &endp);
+    if (endp == q || *endp != ',') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDDRRNG");
+      return true;
+    }
+    q = endp + 1;
+    float drmax = (float)strtod(q, &endp);
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (endp == q || *endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDDRRNG");
+      return true;
+    }
+    if (drmin > drmax) { const float tmp = drmin; drmin = drmax; drmax = tmp; }
+    if (drmin < 0.0f) drmin = 0.0f;
+    if (drmax > 5.0f) drmax = 5.0f;
+    fr3d_pred_delta_r_min = drmin;
+    fr3d_pred_delta_r_max = drmax;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDDRRNG "); SERIAL_PROTOCOL_F(fr3d_pred_delta_r_min, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_delta_r_max, 3); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDKR")) {
+    char *q = p + 6;
+    while (*q == ' ' || *q == '\t') q++;
+    char *endp = NULL;
+    float kspan = (float)strtod(q, &endp);
+    if (endp == q || *endp != ',') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDKR");
+      return true;
+    }
+    q = endp + 1;
+    float kerr = (float)strtod(q, &endp);
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (endp == q || *endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDKR");
+      return true;
+    }
+    if (kspan < 0.0f) kspan = 0.0f;
+    if (kerr < 0.0f) kerr = 0.0f;
+    fr3d_pred_k_span_r = kspan;
+    fr3d_pred_k_err_r = kerr;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDKR "); SERIAL_PROTOCOL_F(fr3d_pred_k_span_r, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_k_err_r, 3); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDKT")) {
+    char *q = p + 6;
+    while (*q == ' ' || *q == '\t') q++;
+    char *endp = NULL;
+    float kspan = (float)strtod(q, &endp);
+    if (endp == q || *endp != ',') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDKT");
+      return true;
+    }
+    q = endp + 1;
+    float kerr = (float)strtod(q, &endp);
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (endp == q || *endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDKT");
+      return true;
+    }
+    if (kspan < 0.0f) kspan = 0.0f;
+    if (kerr < 0.0f) kerr = 0.0f;
+    fr3d_pred_k_span_t = kspan;
+    fr3d_pred_k_err_t = kerr;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDKT "); SERIAL_PROTOCOL_F(fr3d_pred_k_span_t, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_k_err_t, 3); SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDMARG")) {
+    char *q = p + 8;
+    while (*q == ' ' || *q == '\t') q++;
+    char *endp = NULL;
+    float rm = (float)strtod(q, &endp);
+    if (endp == q || *endp != ',') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDMARG");
+      return true;
+    }
+    q = endp + 1;
+    const long tm = strtol(q, &endp, 10);
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (endp == q || *endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDMARG");
+      return true;
+    }
+    if (rm < 0.0f) rm = 0.0f;
+    fr3d_pred_r_switch_margin = rm;
+    fr3d_pred_t_switch_margin = (uint8_t)constrain(tm, 0L, 20L);
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDMARG "); SERIAL_PROTOCOL_F(fr3d_pred_r_switch_margin, 3); SERIAL_ECHOPGM(","); SERIAL_ECHOLN((int)fr3d_pred_t_switch_margin);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDSETTLE")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 10, &lv)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDSETTLE");
+      return true;
+    }
+    fr3d_pred_t_settle_fusions = (uint8_t)constrain(lv, 0L, 20L);
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDSETTLE "); SERIAL_ECHOLN((int)fr3d_pred_t_settle_fusions);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '0') {
+    char *q = p + 4;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D170 empty");
+      return true;
+    }
+    char *endp = NULL;
+    float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D170 parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D170 extra");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 1023.0f) vf = 1023.0f;
+    fr3d_hall_cal_adc_170 = vf;
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok D170 ");
+    SERIAL_ECHOLN(fr3d_hall_cal_adc_170);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '5') {
+    char *q = p + 4;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D175 empty");
+      return true;
+    }
+    char *endp = NULL;
+    float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D175 parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D175 extra");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 1023.0f) vf = 1023.0f;
+    fr3d_hall_cal_adc_175 = vf;
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok D175 ");
+    SERIAL_ECHOLN(fr3d_hall_cal_adc_175);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '8' && fr3d_uc(p[3]) == '0') {
+    char *q = p + 4;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D180 empty");
+      return true;
+    }
+    char *endp = NULL;
+    float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D180 parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err D180 extra");
+      return true;
+    }
+    if (vf < 0.0f) vf = 0.0f;
+    if (vf > 1023.0f) vf = 1023.0f;
+    fr3d_hall_cal_adc_180 = vf;
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok D180 ");
+    SERIAL_ECHOLN(fr3d_hall_cal_adc_180);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == 'O' && fr3d_uc(p[2]) == 'F' && fr3d_uc(p[3]) == 'F') {
+    char *q = p + 4;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DOFF empty");
+      return true;
+    }
+    char *endp = NULL;
+    float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DOFF parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DOFF extra");
+      return true;
+    }
+    if (vf < -0.20f) vf = -0.20f;
+    if (vf > 0.20f) vf = 0.20f;
+    fr3d_hall_diam_offset_mm = vf;
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok DOFF ");
+    SERIAL_PROTOCOL_F(fr3d_hall_diam_offset_mm, 3);
+    SERIAL_ECHOLNPGM("");
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '0') {
+    char *q = p + 4;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err C170 extra");
+      return true;
+    }
+    fr3d_hall_cal_adc_170 = fr3d_hall_adc_read_now();
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok C170 ");
+    SERIAL_ECHOLN(fr3d_hall_cal_adc_170);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '5') {
+    char *q = p + 4;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err C175 extra");
+      return true;
+    }
+    fr3d_hall_cal_adc_175 = fr3d_hall_adc_read_now();
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok C175 ");
+    SERIAL_ECHOLN(fr3d_hall_cal_adc_175);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '8' && fr3d_uc(p[3]) == '0') {
+    char *q = p + 4;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err C180 extra");
+      return true;
+    }
+    fr3d_hall_cal_adc_180 = fr3d_hall_adc_read_now();
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok C180 ");
+    SERIAL_ECHOLN(fr3d_hall_cal_adc_180);
+    return true;
+  }
+
+  if (fr3d_uc(p[0]) == 'S' && fr3d_uc(p[1]) == 'T' && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {
+    char *r = p + 2;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err ST extra");
+      return true;
+    }
+#ifndef FR3D_CSV_TELEMETRY
+    fr3d_compact_last_error = true;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("err ST nocfg");
+    return true;
+#else
+    fr3d_csv_sync_sample_timer();
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok ST");
+    return true;
+#endif
+  }
+
+#ifdef FR3D_SERIAL_HOST_DISABLE_GM
+  if (fr3d_uc(p[0]) == 'M' && fr3d_uc(p[1]) == 'F') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err MF empty");
+      return true;
+    }
+    char *endp = NULL;
+    const long v = strtol(q, &endp, 10);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err MF parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err MF extra");
+      return true;
+    }
+    if (v != 0 && v != 1) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err MF range");
+      return true;
+    }
+    /* Always ON (LCD toggle removed); ignore MF 0 */
+    fr3d_serial_filter_msgs = true;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok MF ");
+    SERIAL_ECHOLN((int)fr3d_serial_filter_msgs);
+    return true;
+  }
+#endif
+#ifdef EEPROM_SETTINGS
+  if (fr3d_uc(p[0]) == 'M' && fr3d_uc(p[1]) == 'S' && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {
+    char *r = p + 2;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err MS extra");
+      return true;
+    }
+    Config_StoreSettings();
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok MS");
+    return true;
+  }
+  if (fr3d_uc(p[0]) == 'M' && fr3d_uc(p[1]) == 'L' && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {
+    char *r = p + 2;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err ML extra");
+      return true;
+    }
+    Config_RetrieveSettings();
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok ML");
+    return true;
+  }
+#endif
+
+  if (fr3d_uc(p[0]) == 'L' && fr3d_uc(p[1]) == 'N') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err LN empty");
+      return true;
+    }
+    char *endp = NULL;
+    const float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err LN parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err LN extra");
+      return true;
+    }
+    float len = vf;
+    if (len < 1000.0f) len = 1000.0f;
+    if (len > 999000.0f) len = 999000.0f;
+    fil_length_cutoff = len;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok LN ");
+    SERIAL_ECHOLN(fil_length_cutoff);
+    return true;
+  }
+  if (
+      fr3d_uc(p[0]) == 'S' && fr3d_uc(p[1]) == 'C' && fr3d_uc(p[2]) == 'L' &&
+      fr3d_uc(p[3]) == 'E' && fr3d_uc(p[4]) == 'A' && fr3d_uc(p[5]) == 'R') {
+    char *q = p + 6;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SCLEAR extra");
+      return true;
+    }
+    avg_measured_filament_width = 0.0f;
+    max_measured_filament_width = 0.0f;
+    min_measured_filament_width = 0.0f;
+    sum_measured_filament_width = 0.0f;
+    n_measured_filament_width = 0.0f;
+    extrude_length = 0.0f;
+    duration = 0UL;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok SCLEAR");
+    return true;
+  }
+  if (fr3d_uc(p[0]) == 'I' && fr3d_uc(p[1]) == 'N') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err IN empty");
+      return true;
+    }
+    char *endp = NULL;
+    const long v = strtol(q, &endp, 10);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err IN parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err IN extra");
+      return true;
+    }
+    long sec = v;
+    if (sec < 1) sec = 1;
+    if (sec > 3 * 60) sec = 3 * 60;
+    injectionTimeSeconds = (int)sec;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok IN ");
+    SERIAL_ECHOLN(injectionTimeSeconds);
+    return true;
+  }
+#ifndef DELTA
+  if (fr3d_uc(p[0]) == 'S' && fr3d_uc(p[1]) == 'F') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SF empty");
+      return true;
+    }
+    char *endp = NULL;
+    const long v = strtol(q, &endp, 10);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SF parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SF extra");
+      return true;
+    }
+    if (v != 0 && v != 1) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err SF range");
+      return true;
+    }
+    sinfin_compression_mode = (uint8_t)(v == 0 ? SINFIN_COMP_ALTA : SINFIN_COMP_BAJA);
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok SF ");
+    SERIAL_ECHOLN((int)v);
+    return true;
+  }
+#endif
+#if (EXTRUDERS > 1) && (TEMP_SENSOR_1 != 0)
+  if (fr3d_uc(p[0]) == 'H' && fr3d_uc(p[1]) == '1') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err H1 empty");
+      return true;
+    }
+    char *endp = NULL;
+    const float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err H1 parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err H1 extra");
+      return true;
+    }
+    int ti = (int)(vf + (vf >= 0 ? 0.5f : -0.5f));
+    if (ti < 0) ti = 0;
+    if (ti > HEATER_1_MAXTEMP - 15) ti = HEATER_1_MAXTEMP - 15;
+    target_temperature[1] = ti;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok H1 ");
+    SERIAL_ECHOLN(ti);
+    return true;
+  }
+#endif
+#if (EXTRUDERS > 2) && (TEMP_SENSOR_2 != 0)
+  if (fr3d_uc(p[0]) == 'H' && fr3d_uc(p[1]) == '2') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err H2 empty");
+      return true;
+    }
+    char *endp = NULL;
+    const float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err H2 parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err H2 extra");
+      return true;
+    }
+    int ti = (int)(vf + (vf >= 0 ? 0.5f : -0.5f));
+    if (ti < 0) ti = 0;
+    if (ti > HEATER_2_MAXTEMP - 15) ti = HEATER_2_MAXTEMP - 15;
+    target_temperature[2] = ti;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok H2 ");
+    SERIAL_ECHOLN(ti);
+    return true;
+  }
+#endif
+#if TEMP_SENSOR_BED != 0
+  if (fr3d_uc(p[0]) == 'H' && fr3d_uc(p[1]) == 'B') {
+    char *q = p + 2;
+    while (*q == ' ' || *q == '\t') q++;
+    if (*q == '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err HB empty");
+      return true;
+    }
+    char *endp = NULL;
+    const float vf = (float)strtod(q, &endp);
+    if (endp == q) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err HB parse");
+      return true;
+    }
+    while (*endp == ' ' || *endp == '\t') endp++;
+    if (*endp != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err HB extra");
+      return true;
+    }
+    int tb = (int)(vf + (vf >= 0 ? 0.5f : -0.5f));
+    if (tb < 0) tb = 0;
+    if (tb > BED_MAXTEMP - 15) tb = BED_MAXTEMP - 15;
+    target_temperature_bed = tb;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok HB ");
+    SERIAL_ECHOLN(tb);
+    return true;
+  }
+#endif
+
+  const char c = fr3d_uc(p[0]);
+  if (c != 'R' && c != 'T' && c != 'F')
+    return false;
+  if (p[1] == '\0') {
+    fr3d_compact_last_error = true;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("err RTF empty");
+    return true;
+  }
+  char *endp = NULL;
+  const float vf = strtod(p + 1, &endp);
+  if (endp == p + 1) {
+    fr3d_compact_last_error = true;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("err RTF parse");
+    return true;
+  }
+  while (*endp == ' ' || *endp == '\t') endp++;
+  if (*endp != '\0') {
+    fr3d_compact_last_error = true;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("err RTF extra");
+    return true;
+  }
+
+  switch (c) {
+    case 'R': {
+      float v = vf;
+      if (v < FR3D_SERIAL_RPM_MIN) v = FR3D_SERIAL_RPM_MIN;
+      if (v > EXTRUDER_RPM_MAX) v = EXTRUDER_RPM_MAX;
+      extruder_rpm_set = v;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOPGM("ok R ");
+      SERIAL_ECHOLN(v);
+      break;
+    }
+    case 'T': {
+      int t = (int)(vf + (vf >= 0 ? 0.5f : -0.5f));
+      if (t < FR3D_SERIAL_TEMP_MIN) t = FR3D_SERIAL_TEMP_MIN;
+      if (t > FR3D_SERIAL_TEMP_MAX) t = FR3D_SERIAL_TEMP_MAX;
+      target_temperature[0] = t;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOPGM("ok T ");
+      SERIAL_ECHOLN(t);
+      break;
+    }
+    case 'F': {
+      int f = (int)(vf + (vf >= 0 ? 0.5f : -0.5f));
+      if (f < FR3D_SERIAL_FAN_MIN) f = FR3D_SERIAL_FAN_MIN;
+      if (f > FR3D_SERIAL_FAN_MAX) f = FR3D_SERIAL_FAN_MAX;
+      default_winder_speed = f;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOPGM("ok F ");
+      SERIAL_ECHOLN(f);
+      break;
+    }
+    default:
+      return false;
+  }
+  return true;
+}
+#endif /* FR3D_SERIAL_HOST_DISABLE_GM */
+
 void process_commands()
 {
   unsigned long codenum; //throw away variable
@@ -1639,6 +3332,56 @@ void process_commands()
 #ifdef ENABLE_AUTO_BED_LEVELING
   float x_tmp, y_tmp, z_tmp, real_z;
 #endif
+
+#ifdef FR3D_SERIAL_HOST_DISABLE_GM
+  /* Quitar CR para que fr3d_cmd_word reconozca fin de palabra en hosts CRLF.
+     Truncar en '*' (checksum Marlin tras N… *NN) para que PNAO/PAUT/PMAN no queden con '*'. */
+  {
+    char *b = cmdbuffer[bufindr];
+    for (char *c = b; *c; ++c) {
+      if (*c == '\r')
+        *c = '\0';
+    }
+    char *star = strchr(b, '*');
+    if (star != NULL)
+      *star = '\0';
+  }
+  if (process_fr3d_compact_line()) {
+    previous_millis_cmd = millis();
+#ifdef SDSUPPORT
+    if (!fromsd[bufindr])
+#endif
+    {
+      if (!fr3d_serial_filter_msgs || fr3d_compact_last_error)
+        SERIAL_PROTOCOLLNPGM(MSG_OK);
+    }
+    return;
+  }
+  if (!fromsd[bufindr]) {
+#if FR3D_SERIAL_HOST_ONLY_COMPACT
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("err FR3D only");
+    ClearToSend();
+    return;
+#else
+    /* No usar strchr('M') en toda la línea: PMAN (alias) contiene M. Preferir token PNAO (sin M).
+       Solo bloquear G/M reales (primera letra tras espacios/N es G o M). */
+    {
+      char *qgm = cmdbuffer[bufindr];
+      while (*qgm == ' ' || *qgm == '\t') qgm++;
+      fr3d_skip_line_number_prefix(&qgm);
+      const char g0 = fr3d_uc(*qgm);
+      if (g0 == 'G' || g0 == 'M') {
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("err GM disabled");
+        ClearToSend();
+        return;
+      }
+    }
+#endif
+  }
+#endif
+
   if(code_seen('G'))
   {
     switch((int)code_value())
@@ -2109,7 +3852,18 @@ void process_commands()
     }
   }
 
-  else if(code_seen('M'))
+  else if(
+    ({
+      char *mcmd = cmdbuffer[bufindr];
+      while (*mcmd == ' ' || *mcmd == '\t') mcmd++;
+      if (fr3d_uc(*mcmd) == 'N') {
+        while (*mcmd && *mcmd != ' ' && *mcmd != '\t') mcmd++;
+        while (*mcmd == ' ' || *mcmd == '\t') mcmd++;
+      }
+      fr3d_uc(*mcmd) == 'M';
+    })
+    && !fr3d_line_is_compact_pman_or_paut()
+  )
   {
     switch( (int)code_value() )
     {

@@ -19,6 +19,13 @@
  */
 
 /*
+ FR3D customization matrix:
+ - MK3S+ FR3D firmware: v1.1.0 (2026-04-27)
+ - Python UI/merge compatible: v1.5.0 (2026-04-27)
+ - Addon FR3D STM32 compatible: v1.1.0 (2026-04-27)
+*/
+
+/*
  This firmware is a mashup between Sprinter and grbl.
   (https://github.com/kliment/Sprinter)
   (https://github.com/simen/grbl/tree)

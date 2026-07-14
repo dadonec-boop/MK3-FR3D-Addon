@@ -67,6 +67,9 @@
 #define SPLASH2 "  Desktop Filament  "
 #define SPLASH3 "   Extruder  MK3S   "
 
+#define MSG_SINFIN_MENU "Sinfin type"
+#define MSG_SINFIN_ALTA "High compression"
+#define MSG_SINFIN_BAJA "Low compression"
 
 #if LANGUAGE_CHOICE == 1
 
@@ -108,6 +111,8 @@
 #define MSG_EXT_RPM "Extruder rpm" //MK3
 #define MSG_NOZZLE "Nozzle" //MK3
 #define MSG_HEATER "Temperature" //MK3
+/* Submenu Preheat ABS: not live target; avoids dupe label "Temperature". */
+#define MSG_PREHEAT_ABS_HOTEND_T "PreHt ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "L Cutoff" //MK3
 #define MSG_FILAMENT "Sensor Pos" //MK3
 #define MSG_WINDER_SPEED "Fan Speed" //MK3
@@ -118,6 +123,12 @@
 #define MSG_PID_C "PID-C" //MK3
 #define MSG_AUTOTUNE "PID Autotune" //MK3
 #define MSG_CONTROL "Control" //MK3
+#undef MSG_SINFIN_MENU
+#undef MSG_SINFIN_ALTA
+#undef MSG_SINFIN_BAJA
+#define MSG_SINFIN_MENU "Sinfin type" //MK3
+#define MSG_SINFIN_ALTA "High compression" //MK3
+#define MSG_SINFIN_BAJA "Low compression" //MK3
 #define MSG_VE_JERK "Ve-jerk" //MK3
 #define MSG_E "e" //MK3
 #define MSG_WATCH "Start Screen" //MK3
@@ -350,6 +361,7 @@
 #define MSG_EXT_RPM "Extruder Geschw." //MK3
 #define MSG_NOZZLE "Nozzle" //MK3
 #define MSG_HEATER "Temperatur" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Vorw.ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "Soll Laenge" //MK3
 #define MSG_FILAMENT "Sensor Pos" //MK3
 #define MSG_WINDER_SPEED "Luefter Geschw." //MK3
@@ -593,6 +605,7 @@
 #define MSG_EXT_RPM "Tr/mn extrud." //MK3
 #define MSG_NOZZLE "Nozzle" //MK3
 #define MSG_HEATER "Temperature" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Prech.ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "Lim Longueur" //MK3
 #define MSG_FILAMENT "Pos capteur" //MK3
 #define MSG_WINDER_SPEED "Vit Ventila." //MK3
@@ -835,6 +848,7 @@
 #define MSG_EXT_RPM "Exstruder ppo" //MK3
 #define MSG_NOZZLE "Dysza" //MK3
 #define MSG_HEATER "Temperatura" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Rozgrz.ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "D Odciecie" //MK3
 #define MSG_FILAMENT "Czujnik poz" //MK3
 #define MSG_WINDER_SPEED "Predk. went." //MK3
@@ -1078,6 +1092,7 @@
 #define MSG_EXT_RPM "RPM extrusora" //MK3
 #define MSG_NOZZLE "Boquilla" //MK3
 #define MSG_HEATER "Temperatura" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Precal.ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "Longitud objetivo" //MK3
 #define MSG_FILAMENT "Posic. del sensor" //MK3
 #define MSG_WINDER_SPEED "Veloc. del ventil." //MK3
@@ -1088,6 +1103,12 @@
 #define MSG_PID_C "PiD-C" //MK3
 #define MSG_AUTOTUNE "Autoajuste PiD" //MK3
 #define MSG_CONTROL "Control" //MK3
+#undef MSG_SINFIN_MENU
+#undef MSG_SINFIN_ALTA
+#undef MSG_SINFIN_BAJA
+#define MSG_SINFIN_MENU "Tipo sinfin" //MK3
+#define MSG_SINFIN_ALTA "Alta compresion" //MK3
+#define MSG_SINFIN_BAJA "Baja compresion" //MK3
 #define MSG_VE_JERK "Muelle en V" //MK3
 #define MSG_E "e" //MK3
 #define MSG_WATCH "Pantalla inicio" //MK3
@@ -1322,6 +1343,7 @@
 #define MSG_EXT_RPM "Giri Estrus" //MK3
 #define MSG_NOZZLE "Nozzle" //MK3
 #define MSG_HEATER "Temperatura" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "PreHt ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "Taglio L" //MK3
 #define MSG_FILAMENT "Pos. Sensor" //MK3
 #define MSG_WINDER_SPEED "Veloc. Vent." //MK3
@@ -1564,6 +1586,7 @@
 #define MSG_EXT_RPM "Rpm extrusora" //MK3
 #define MSG_NOZZLE "Nozzle" //MK3
 #define MSG_HEATER "Temperatura" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "PreHt ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "Lim. Comprim" //MK3
 #define MSG_FILAMENT "Pos. Sensor" //MK3
 #define MSG_WINDER_SPEED "Vel. Ventoi." //MK3
@@ -1807,6 +1830,7 @@
 #define MSG_EXT_RPM "Extruder rpm" //MK3
 #define MSG_NOZZLE "Tryska" //MK3
 #define MSG_HEATER "Teplota" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Predh.ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "D Vyp." //MK3
 #define MSG_FILAMENT "Poz. Senzor" //MK3
 #define MSG_WINDER_SPEED "Rych Vet." //MK3
@@ -2048,6 +2072,7 @@
 #define MSG_EXT_RPM "Rpm extrudor" //MK3
 #define MSG_NOZZLE "Duza" //MK3
 #define MSG_HEATER "Temperatura" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Preinc.ABS" //MK3
 #define MSG_LENGTH_CUTOFF "L Taiere" //MK3
 #define MSG_FILAMENT "Poz Senzor" //MK3
 #define MSG_WINDER_SPEED "Vit. vent" //MK3
@@ -2289,6 +2314,7 @@
 #define MSG_EXT_RPM "Extruder rpm" //MK3
 #define MSG_NOZZLE "Nozzle" //MK3
 #define MSG_HEATER "Temperatuur" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Voorw.ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "L Cutoff" //MK3
 #define MSG_FILAMENT "Sensor Pos" //MK3
 #define MSG_WINDER_SPEED "Fan Snelh" //MK3
@@ -2530,6 +2556,7 @@
 #define MSG_EXT_RPM "Extruder rpm" //MK3
 #define MSG_NOZZLE "Fuvoka" //MK3
 #define MSG_HEATER "Homerseklet" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Elome.ABS" //MK3
 #define MSG_LENGTH_CUTOFF "Celhossz" //MK3
 #define MSG_FILAMENT "Erzekelo pozicio" //MK3
 #define MSG_WINDER_SPEED "Ventilator fordulatszam" //MK3
@@ -2772,6 +2799,7 @@
 #define MSG_EXT_RPM "Extruder rpm" //MK3
 #define MSG_NOZZLE "Nozzle" //MK3
 #define MSG_HEATER "Temperatur" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "Panas ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "Batas P" //MK3
 #define MSG_FILAMENT "Sensor Pos" //MK3
 #define MSG_WINDER_SPEED "Kec Kipas" //MK3
@@ -3013,6 +3041,7 @@
 #define MSG_EXT_RPM "Ekstrudr rpm" //MK3
 #define MSG_NOZZLE "Nozul" //MK3
 #define MSG_HEATER "Sicaklik" //MK3
+#define MSG_PREHEAT_ABS_HOTEND_T "On is.ABS T" //MK3
 #define MSG_LENGTH_CUTOFF "U Kesim" //MK3
 #define MSG_FILAMENT "Sensor Knm" //MK3
 #define MSG_WINDER_SPEED "Fan Hizi" //MK3

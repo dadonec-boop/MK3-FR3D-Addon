@@ -494,8 +494,10 @@
 	  //define analog pin for the filament width sensor input
 	  //Use the RAMPS 1.4 Analog input 5 on the AUX2 connector
       #define FILWIDTH_PIN        4
-	  //Use the RAMPS 1.4 Digital input D3 (usually XMIN endstop pin)
-	  #define EXTRUDER_MOTOR_ON_OFF_PIN		3
+      /* Hall diámetro: canal ADC 3 (entrada analógica A3 en Mega2560). */
+      #define FR3D_HALL_DIAMETER_PIN 3
+      /* Interruptor motor extrusor en D3: no usado en hardware actual. */
+      #define EXTRUDER_MOTOR_ON_OFF_PIN  -1
       #define X_MAX_PIN -1 //FMM remove definition for limit pins to speed the stepper interrupt.
 	  #define Y_MAX_PIN -1
       #define Z_MAX_PIN -1
@@ -580,6 +582,15 @@
   #endif
 
   #define TEMP_BED_PIN       14   // ANALOG NUMBERING
+
+  /* Placa 34: T0 se deja en 14 (mismo criterio que el fork / placa ARTME; 13 provocaba MINTEMP si el
+     termistor sigue en A14). Sin segundo hotend ni cama en firmware → no muestrear T1 ni TB. */
+  #if MOTHERBOARD == 34
+    #undef TEMP_1_PIN
+    #define TEMP_1_PIN         -1
+    #undef TEMP_BED_PIN
+    #define TEMP_BED_PIN       -1
+  #endif
 
   #ifdef NUM_SERVOS
     #define SERVO0_PIN         11
