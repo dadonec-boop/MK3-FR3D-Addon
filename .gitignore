@@ -1,0 +1,6 @@
+desktop.ini
+*.o
+*.elf
+*.hex
+.DS_Store
+
