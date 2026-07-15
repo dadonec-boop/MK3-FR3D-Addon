@@ -15,12 +15,13 @@ Based on **MACKEREL** (Marlin-derived filament extruder firmware by Filip Mulier
 | `MK3/` | Firmware sources (Arduino / Mega — flash this folder) |
 | [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip) | Ready-to-download ZIP of `MK3/` for Arduino IDE |
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
+| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.1) | Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
 
-This repository publishes **MK3 board firmware only**.
+This repository publishes **MK3 board firmware** (GPL-3.0) and, via **GitHub Releases**, a **prebuilt Pi Zero 2 W gateway image** (binary download only — gateway source is not published here).
 
-It does **not** include the Raspberry Pi gateway, Python host tools, or the web application.
+It does **not** include the Python host tools or the web application source.
 
 ---
 
@@ -46,13 +47,36 @@ This firmware is **prepared** for remote control when used with the **MK3s + FR3
 - A **web application** is used to configure and control the machine
 - Operational reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
 
-That layer (Pi gateway, host/backend, and web app) is an **additional product feature**.  
-It is **not included in this repository** and is **not published here under an open-source / public license**.
+The web app / host stack is an **additional product feature** and is **not** published here as open-source.
 
-What *is* public and licensed under **GPL-3.0** in this repo is the **modified MK3 firmware (FR3D Addon)** — ready to flash, and optionally integrable with your own host using the firmware’s USB/CSV protocol.
+A **prebuilt SD image** for the Pi Zero 2 W gateway is available for download under [Releases](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases) (image file only).
 
 ---
 
+## Download Raspberry Pi Zero 2 W gateway image
+
+Download the factory image from the Release:
+
+- **[fr3daddon-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.1/fr3daddon-small.img.zst)**  
+  Release notes: [pi-gateway-v0.1](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.1)
+
+### Flash with Raspberry Pi Imager
+
+1. Download [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
+2. Insert a micro SD card (**32 GB** or larger recommended).
+3. Open Imager → **Choose OS** → **Use custom** → select `fr3daddon-small.img.zst`.
+4. **Choose storage** → your SD card → **Write**.
+5. Insert the SD into the Pi Zero 2 W and power on.
+
+### First boot / factory defaults
+
+- WiFi hotspot: **SSID `addonfr3d`** / password **`addonfr3d`**
+- Local setup page (from a device on that hotspot): **http://10.42.0.1:8080/**  
+  Login: **`addonfr3d` / `addonfr3d`**
+- On first boot the image personalizes hostname / SSH keys automatically (no manual script needed).
+- Then continue pairing from the web app ([fr3d-addon.web.app](http://fr3d-addon.web.app/)) using the token shown on the MK3S+ (**Control → addonfr3d-gateway**).
+
+---
 
 ## Standalone user guide
 
@@ -93,13 +117,16 @@ Clone or browse this repository and open `MK3/MK3.ino` directly — same result 
   - Upstream Mackerel/Marlin base remains free software under the GNU GPL
   - FR3D Addon modifications are distributed under the same GPL-3.0 terms
 
-- **Internet control stack (Raspberry Pi Zero 2 W + web app + gateway):**  
+- **Internet control stack (web app + gateway source):**  
   **not** included in this repository and **not** licensed here as public open-source software.
+
+- **Pi Zero 2 W factory image (Release asset):** distributed as a binary image for end users; gateway source code is not published in this repository.
 
 ---
 
 ## Links
 
+- Pi gateway image: [fr3daddon-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.1/fr3daddon-small.img.zst)
 - Firmware ZIP (Arduino IDE): [dist/MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)
 - Standalone user guide (PDF): [docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
 - System / web app reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
