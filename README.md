@@ -4,7 +4,10 @@ Public firmware for the **Desktop Filament Extruder MK3**, with **FR3D Addon** m
 
 Based on **MACKEREL** (Marlin-derived filament extruder firmware by Filip Mulier / Hugh Lyman).
 
-**Reference web app:** [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
+You can use this firmware in two ways:
+
+1. **Standalone** — MK3S+ with FR3D Addon from the machine LCD (no Raspberry Pi gateway / web app required)
+2. **Internet control** — optional Raspberry Pi Zero 2 W gateway + web app ([fr3d-addon.web.app](http://fr3d-addon.web.app/))
 
 ---
 
@@ -15,7 +18,7 @@ Based on **MACKEREL** (Marlin-derived filament extruder firmware by Filip Mulier
 | `MK3/` | Firmware sources (Arduino / Mega — flash this folder) |
 | [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip) | Ready-to-download ZIP of `MK3/` for Arduino IDE |
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
-| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.2) | Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
+| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.2) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
 
@@ -39,7 +42,42 @@ See [CHANGELOG.md](CHANGELOG.md) for the full list of changes versus original MK
 
 ---
 
+## Standalone user guide
+
+For MK3S+ with FR3D Addon operating from the machine LCD (**standalone** — without Raspberry Pi gateway / web app):
+
+- [USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
+
+Covers project scope, Addon FR3D overview, diameter hardware (Hall on A3 / ARTME 3D optical), LCD main-screen use, and recommended steps for automatic predictor operation.
+
+---
+
+## Download ZIP (Arduino IDE)
+
+If you only want to flash the board, download the ready-made package:
+
+- **[MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)**
+
+### Steps on your PC
+
+1. Download [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip).
+2. Unzip it. You will get a folder named **`MK3`** (it must stay named `MK3`, matching `MK3.ino`).
+3. Install **Arduino IDE** (or a compatible AVR Mega 2560 / RAMPS toolchain as used by MK3).
+4. In Arduino IDE: **File → Open…** and open `MK3/MK3.ino`.
+5. Select the correct **board** and **port**.
+6. Click **Upload**.
+
+After a first flash on an older EEPROM, the board may load hardcoded defaults (`Hardcoded Default Settings Loaded` on serial) or migrate known FR3D EEPROM versions to V28.
+
+### Alternative (from source tree)
+
+Clone or browse this repository and open `MK3/MK3.ino` directly — same result as using the ZIP.
+
+---
+
 ## Internet control (MK3s + FR3D Addon)
+
+This is an **optional** path. Standalone LCD operation above does **not** require a Pi or the web app.
 
 This firmware is **prepared** for remote control when used with the **MK3s + FR3D Addon** product stack:
 
@@ -78,39 +116,6 @@ Download the factory image from the Release:
 
 ---
 
-## Standalone user guide
-
-For MK3S+ with FR3D Addon operating from the machine LCD (**standalone** — without Raspberry Pi gateway / web app):
-
-- [USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
-
-Covers project scope, Addon FR3D overview, diameter hardware (Hall on A3 / ARTME 3D optical), LCD main-screen use, and recommended steps for automatic predictor operation.
-
----
-
-## Download ZIP (Arduino IDE)
-
-If you only want to flash the board, download the ready-made package:
-
-- **[MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)**
-
-### Steps on your PC
-
-1. Download [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip).
-2. Unzip it. You will get a folder named **`MK3`** (it must stay named `MK3`, matching `MK3.ino`).
-3. Install **Arduino IDE** (or a compatible AVR Mega 2560 / RAMPS toolchain as used by MK3).
-4. In Arduino IDE: **File → Open…** and open `MK3/MK3.ino`.
-5. Select the correct **board** and **port**.
-6. Click **Upload**.
-
-After a first flash on an older EEPROM, the board may load hardcoded defaults (`Hardcoded Default Settings Loaded` on serial) or migrate known FR3D EEPROM versions to V28.
-
-### Alternative (from source tree)
-
-Clone or browse this repository and open `MK3/MK3.ino` directly — same result as using the ZIP.
-
----
-
 ## License
 
 - **Firmware in this repository (`MK3/`):** [GPL-3.0](LICENSE)
@@ -126,8 +131,8 @@ Clone or browse this repository and open `MK3/MK3.ino` directly — same result 
 
 ## Links
 
-- Pi gateway image: [fr3daddon-v0.2-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.2/fr3daddon-v0.2-small.img.zst)
 - Firmware ZIP (Arduino IDE): [dist/MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)
 - Standalone user guide (PDF): [docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
+- Pi gateway image: [fr3daddon-v0.2-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.2/fr3daddon-v0.2-small.img.zst)
 - System / web app reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
 - Source: [github.com/dadonec-boop/MK3-FR3D-Addon](https://github.com/dadonec-boop/MK3-FR3D-Addon)
