@@ -19,7 +19,7 @@ You can use this firmware in two ways:
 | [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip) | Ready-to-download ZIP of `MK3/` for Arduino IDE |
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
 | [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/) | Printable Hall-effect (INFIDEL-style) diameter-sensor parts (STL) |
-| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.2) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
+| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.3) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
 
@@ -99,14 +99,14 @@ A **prebuilt SD image** for the Pi Zero 2 W gateway is available for download un
 
 Download the factory image from the Release:
 
-- **[fr3daddon-v0.2-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.2/fr3daddon-v0.2-small.img.zst)**  
-  Release notes: [pi-gateway-v0.2](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.2)
+- **[fr3daddon-v0.3-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.3/fr3daddon-v0.3-small.img.zst)**  
+  Release notes: [pi-gateway-v0.3](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.3)
 
 ### Flash with Raspberry Pi Imager
 
 1. Download [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 2. Insert a micro SD card (**32 GB** or larger recommended).
-3. Open Imager → **Choose OS** → **Use custom** → select `fr3daddon-v0.2-small.img.zst`.
+3. Open Imager → **Choose OS** → **Use custom** → select `fr3daddon-v0.3-small.img.zst`.
 4. **Choose storage** → your SD card → **Write**.
 5. Insert the SD into the Pi Zero 2 W and power on.
 
@@ -137,6 +137,6 @@ Download the factory image from the Release:
 
 - Firmware ZIP (Arduino IDE): [dist/MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)
 - Standalone user guide (PDF): [docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
-- Pi gateway image: [fr3daddon-v0.2-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.2/fr3daddon-v0.2-small.img.zst)
+- Pi gateway image: [fr3daddon-v0.3-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.3/fr3daddon-v0.3-small.img.zst)
 - System / web app reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
 - Source: [github.com/dadonec-boop/MK3-FR3D-Addon](https://github.com/dadonec-boop/MK3-FR3D-Addon)
