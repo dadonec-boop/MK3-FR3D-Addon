@@ -58,6 +58,7 @@ static void lcd_control_temperature_menu();
 static void lcd_control_Filament_PID_menu();
 static void lcd_addonfr3d_menu();
 static void lcd_addonfr3d_hall_a3_menu();
+static void lcd_hall_calibrate_menu();
 static void lcd_addonfr3d_predictor_menu();
 static void lcd_addonfr3d_gateway_id_screen();
 static void lcd_addonfr3d_predictor_advanced_menu();
@@ -1151,9 +1152,12 @@ static void lcd_hall_capture_live_screen()
     if (lcd_hall_capture_dst != NULL)
       saved_adc = (int)((*lcd_hall_capture_dst) + 0.5f);
 
-    if (lcd_hall_capture_point == 170) title = PSTR("Cal 1.70 C/S");
-    else if (lcd_hall_capture_point == 175) title = PSTR("Cal 1.75 C/S");
-    else if (lcd_hall_capture_point == 180) title = PSTR("Cal 1.80 C/S");
+    if (lcd_hall_capture_point == 170)
+      title = (fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? PSTR("Cal 1.70 C/S") : PSTR("Cal 1.50 C/S");
+    else if (lcd_hall_capture_point == 175)
+      title = (fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? PSTR("Cal 1.75 C/S") : PSTR("Cal 1.70 C/S");
+    else if (lcd_hall_capture_point == 180)
+      title = (fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? PSTR("Cal 1.80 C/S") : PSTR("Cal 2.00 C/S");
 
     if (lcdDrawUpdate)
     {
@@ -1170,11 +1174,14 @@ static void lcd_hall_capture_live_screen()
     if (ENCODER_CLICKED && lcd_hall_capture_dst != NULL)
     {
       *lcd_hall_capture_dst = raw;
+      if (lcd_hall_capture_point == 170) fr3d_hall_note_point_saved(0);
+      else if (lcd_hall_capture_point == 175) fr3d_hall_note_point_saved(1);
+      else if (lcd_hall_capture_point == 180) fr3d_hall_note_point_saved(2);
 #ifdef EEPROM_SETTINGS
       Config_StoreSettings();
 #endif
       lcd_quick_feedback();
-      currentMenu = lcd_addonfr3d_hall_a3_menu;
+      currentMenu = lcd_hall_calibrate_menu;
       encoderPosition = 0;
       return;
     }
@@ -1184,7 +1191,7 @@ static void lcd_hall_capture_live_screen()
     {
       encoderPosition = 0;
       lcd_quick_feedback();
-      currentMenu = lcd_addonfr3d_hall_a3_menu;
+      currentMenu = lcd_hall_calibrate_menu;
       return;
     }
 }
@@ -1222,14 +1229,89 @@ static void lcd_hall_capture_180()
     lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
 }
 
+static void lcd_hall_open_calibrate_menu()
+{
+    lcd_quick_feedback();
+    currentMenu = lcd_hall_calibrate_menu;
+    encoderPosition = 0;
+    lcdDrawUpdate = 2;
+}
+
+static void lcd_hall_now_info()
+{
+    lcd_quick_feedback();
+}
+
+static void lcd_hall_pattern_need_calib_screen(void);
+
+static void lcd_hall_pattern_set_a()
+{
+    fr3d_hall_set_pattern(FR3D_HALL_PATTERN_A);
+    lcd_hall_store_settings();
+    lcd_quick_feedback();
+    currentMenu = lcd_hall_pattern_need_calib_screen;
+    encoderPosition = 0;
+    lcdDrawUpdate = 2;
+    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
+}
+
+static void lcd_hall_pattern_set_b()
+{
+    fr3d_hall_set_pattern(FR3D_HALL_PATTERN_B);
+    lcd_hall_store_settings();
+    lcd_quick_feedback();
+    currentMenu = lcd_hall_pattern_need_calib_screen;
+    encoderPosition = 0;
+    lcdDrawUpdate = 2;
+    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
+}
+
+static void lcd_hall_pattern_menu()
+{
+    START_MENU();
+    MENU_ITEM(back, "Diameter Sensor", lcd_addonfr3d_hall_a3_menu);
+    if (fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
+    {
+      MENU_ITEM(function, "Now 1.7/1.75/1.8", lcd_hall_now_info);
+      MENU_ITEM(function, "Set 1.5/1.7/2.0", lcd_hall_pattern_set_a);
+    }
+    else
+    {
+      MENU_ITEM(function, "Now 1.5/1.7/2.0", lcd_hall_now_info);
+      MENU_ITEM(function, "Set 1.7/1.75/1.8", lcd_hall_pattern_set_b);
+    }
+    END_MENU();
+}
+
+static void lcd_hall_calibrate_menu()
+{
+    START_MENU();
+    MENU_ITEM(back, "Diameter Sensor", lcd_addonfr3d_hall_a3_menu);
+    if (fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
+    {
+      MENU_ITEM(function, "Capture 1.70", lcd_hall_capture_170);
+      MENU_ITEM(function, "Capture 1.75", lcd_hall_capture_175);
+      MENU_ITEM(function, "Capture 1.80", lcd_hall_capture_180);
+    }
+    else
+    {
+      MENU_ITEM(function, "Capture 1.50", lcd_hall_capture_170);
+      MENU_ITEM(function, "Capture 1.70", lcd_hall_capture_175);
+      MENU_ITEM(function, "Capture 2.00", lcd_hall_capture_180);
+    }
+    END_MENU();
+}
+
 static void lcd_addonfr3d_hall_a3_menu()
 {
     lcd_hall_offset_ui_refresh();
     START_MENU();
     MENU_ITEM(back, "AddonFR3D", lcd_addonfr3d_menu);
-    MENU_ITEM(function, "Capture 1.70", lcd_hall_capture_170);
-    MENU_ITEM(function, "Capture 1.75", lcd_hall_capture_175);
-    MENU_ITEM(function, "Capture 1.80", lcd_hall_capture_180);
+    MENU_ITEM(submenu, "Pattern Diameter", lcd_hall_pattern_menu);
+    if (fr3d_hall_cal_valid == 0)
+      MENU_ITEM(function, "Need Calibrate!", lcd_hall_open_calibrate_menu);
+    else
+      MENU_ITEM(submenu, "CALIBRATE", lcd_hall_calibrate_menu);
     MENU_ITEM(function, "Offset", lcd_hall_offset_open_editor);
     END_MENU();
 }
@@ -1460,6 +1542,40 @@ static void lcd_gateway_fr3d_dogm_row(uint8_t row, const char *text)
 }
 #endif
 
+static void lcd_hall_pattern_need_calib_screen(void)
+{
+    if (lcdDrawUpdate)
+    {
+#ifndef DOGLCD
+        lcd_gateway_id_draw_row(0, "New Setting OK");
+        lcd_gateway_id_draw_row(1, "Need Calibrate!!!");
+        lcd_gateway_id_draw_row(2, "Click To calibrate");
+        lcd_gateway_id_draw_row(3, "");
+#else
+        lcd_gateway_fr3d_dogm_row(0, "New Setting OK");
+        lcd_gateway_fr3d_dogm_row(1, "Need Calibrate!!!");
+        lcd_gateway_fr3d_dogm_row(2, "Click To calibrate");
+        lcd_gateway_fr3d_dogm_row(3, "");
+#endif
+    }
+
+    if (ENCODER_CLICKED)
+    {
+        lcd_quick_feedback();
+        encoderPosition = 0;
+        lcd_hall_capture_170();
+        return;
+    }
+
+    if (encoderPosition != 0)
+    {
+        encoderPosition = 0;
+        lcd_quick_feedback();
+        currentMenu = lcd_addonfr3d_hall_a3_menu;
+        lcdDrawUpdate = 2;
+    }
+}
+
 static bool lcd_gw_prefix_ci(const char *s, const char *pfx)
 {
     while (*pfx) {
@@ -1573,7 +1689,7 @@ static void lcd_addonfr3d_menu()
 {
     START_MENU();
     MENU_ITEM(back, MSG_CONTROL, lcd_control_menu);
-    MENU_ITEM(submenu, "Hall A3", lcd_addonfr3d_hall_a3_menu);
+    MENU_ITEM(submenu, "Diameter Sensor", lcd_addonfr3d_hall_a3_menu);
     MENU_ITEM(function, "Gateway FR3D", lcd_addonfr3d_gateway_id_open);
     END_MENU();
 }

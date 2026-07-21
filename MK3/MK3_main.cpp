@@ -1928,17 +1928,19 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHOLNPGM(" SWMIN<mm> umbral minimo sensor (0.0-7.55)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" SWMAX<mm> umbral maximo sensor (0.0-7.55)");
-    SERIAL_ECHOLNPGM(" D170<adc> calibracion A3 para patron 1.70 mm");
+    SERIAL_ECHOLNPGM(" D170<adc> calibracion slot Lo (patron segun PAT A/B)");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" D175<adc> calibracion A3 para patron 1.75 mm");
+    SERIAL_ECHOLNPGM(" D175<adc> calibracion slot Mid");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" D180<adc> calibracion A3 para patron 1.80 mm");
+    SERIAL_ECHOLNPGM(" D180<adc> calibracion slot Hi");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" DOFF<mm> offset diametro Hall A3 (-0.20..0.20)");
     SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" HPATA/HPATB preset patrones A(1.5/1.7/2.0) B(1.7/1.75/1.8); invalida CALV");
+    SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" C170/C175/C180 capturar ADC actual A3 para patron");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" QUERY incluye A3,<adc> lectura cruda Hall A3; DLCD,<mm> diametro LCD (D)");
+    SERIAL_ECHOLNPGM(" QUERY incluye PAT,CALV,A3,<adc>; DLCD,<mm> diametro LCD (D)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" DIAMQ solo DLCD (diametro LCD campo D)");
     SERIAL_ECHO_START;
@@ -2039,6 +2041,8 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START; SERIAL_ECHOPGM("SWmax,"); SERIAL_ECHO(sensorRunoutMax); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("DH,"); SERIAL_ECHO(1); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("A3,"); SERIAL_ECHO(fr3d_hall_adc_read_now()); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PAT,"); SERIAL_ECHO((fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? 'B' : 'A'); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("CALV,"); SERIAL_ECHO((int)fr3d_hall_cal_valid); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("D170,"); SERIAL_ECHO(fr3d_hall_cal_adc_170); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("D175,"); SERIAL_ECHO(fr3d_hall_cal_adc_175); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("D180,"); SERIAL_ECHO(fr3d_hall_cal_adc_180); SERIAL_ECHOLNPGM(",");
@@ -2760,6 +2764,7 @@ static bool process_fr3d_compact_line()
     if (vf < 0.0f) vf = 0.0f;
     if (vf > 1023.0f) vf = 1023.0f;
     fr3d_hall_cal_adc_170 = vf;
+    fr3d_hall_note_point_saved(0);
 #ifdef EEPROM_SETTINGS
     Config_StoreSettings();
 #endif
@@ -2796,6 +2801,7 @@ static bool process_fr3d_compact_line()
     if (vf < 0.0f) vf = 0.0f;
     if (vf > 1023.0f) vf = 1023.0f;
     fr3d_hall_cal_adc_175 = vf;
+    fr3d_hall_note_point_saved(1);
 #ifdef EEPROM_SETTINGS
     Config_StoreSettings();
 #endif
@@ -2832,6 +2838,7 @@ static bool process_fr3d_compact_line()
     if (vf < 0.0f) vf = 0.0f;
     if (vf > 1023.0f) vf = 1023.0f;
     fr3d_hall_cal_adc_180 = vf;
+    fr3d_hall_note_point_saved(2);
 #ifdef EEPROM_SETTINGS
     Config_StoreSettings();
 #endif
@@ -2888,6 +2895,7 @@ static bool process_fr3d_compact_line()
       return true;
     }
     fr3d_hall_cal_adc_170 = fr3d_hall_adc_read_now();
+    fr3d_hall_note_point_saved(0);
 #ifdef EEPROM_SETTINGS
     Config_StoreSettings();
 #endif
@@ -2907,6 +2915,7 @@ static bool process_fr3d_compact_line()
       return true;
     }
     fr3d_hall_cal_adc_175 = fr3d_hall_adc_read_now();
+    fr3d_hall_note_point_saved(1);
 #ifdef EEPROM_SETTINGS
     Config_StoreSettings();
 #endif
@@ -2926,12 +2935,35 @@ static bool process_fr3d_compact_line()
       return true;
     }
     fr3d_hall_cal_adc_180 = fr3d_hall_adc_read_now();
+    fr3d_hall_note_point_saved(2);
 #ifdef EEPROM_SETTINGS
     Config_StoreSettings();
 #endif
     SERIAL_ECHO_START;
     SERIAL_ECHOPGM("ok C180 ");
     SERIAL_ECHOLN(fr3d_hall_cal_adc_180);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "HPAT")) {
+    char *q = p + 4;
+    while (*q == ' ' || *q == '\t') q++;
+    char ch = fr3d_uc(*q);
+    if ((ch != 'A' && ch != 'B') || (q[1] != '\0' && q[1] != ' ' && q[1] != '\t')) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err HPAT use HPATA or HPATB");
+      return true;
+    }
+    fr3d_hall_set_pattern((ch == 'B') ? FR3D_HALL_PATTERN_B : FR3D_HALL_PATTERN_A);
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok HPAT ");
+    SERIAL_ECHO(ch);
+    SERIAL_ECHOPGM(" CALV=");
+    SERIAL_ECHOLN((int)fr3d_hall_cal_valid);
     return true;
   }
 

@@ -2,6 +2,19 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [v-mk3-fr3d] — 2026-07-21
+
+### Diameter sensor (LCD / Pattern Diameter)
+
+- Menu **Control → AddonFR3D → Diameter Sensor**
+- **Pattern Diameter**: shows **Now** (active mm preset) and **Set** for the *other* preset only
+  - Wide preset **1.5 / 1.7 / 2.0** mm
+  - Standard preset **1.7 / 1.75 / 1.8** mm
+- Changing pattern: invalidates calibration (`CALV=0`), clears capture mask/ADC points, and resets **Offset (DOFF) to 0**
+- After **Set**: confirm screen → first Capture; **Need Calibrate!** when `CALV=0`; **CALIBRATE** when `CALV=1`
+- User guide PDF and `dist/MK3-FR3D-Addon.zip` refreshed (21 Jul 2026)
+- Printable INFIDEL-style Hall parts: [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/)
+
 ## [v-mk3-fr3d] — 2026-07-14
 
 ### Identity / licensing header
@@ -11,7 +24,7 @@ History of meaningful firmware changes relative to the original Desktop Filament
 
 ### Diameter measurement (Hall)
 
-- Hall diameter sensing support (enable flag, ADC calibration points 1.70 / 1.75 / 1.80 mm, diameter offset)
+- Hall diameter sensing support (enable flag, ADC calibration points, diameter offset)
 - LCD helpers for capture / offset under AddonFR3D-related menus
 - Default: Hall diameter **OFF** until calibrated/enabled
 - Jump debounce / pending-match filtering for published diameter (CSV / predictor)

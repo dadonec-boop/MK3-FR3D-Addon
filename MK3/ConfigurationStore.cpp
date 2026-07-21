@@ -78,7 +78,7 @@ void _EEPROM_readData(int &pos, uint8_t* value, uint8_t size)
 #ifdef DELTA
 #define EEPROM_VERSION "V11"
 #else
-#define EEPROM_VERSION "V28"
+#define EEPROM_VERSION "V29"
 #endif
 
 #ifdef EEPROM_SETTINGS
@@ -151,6 +151,9 @@ void Config_StoreSettings()
   EEPROM_WRITE_VAR(i,fr3d_hall_cal_adc_175);
   EEPROM_WRITE_VAR(i,fr3d_hall_cal_adc_180);
   EEPROM_WRITE_VAR(i,fr3d_hall_diam_offset_mm);
+  EEPROM_WRITE_VAR(i,fr3d_hall_pattern);
+  EEPROM_WRITE_VAR(i,fr3d_hall_cal_valid);
+  EEPROM_WRITE_VAR(i,fr3d_hall_cal_mask);
   {
     const uint8_t fr3d_pred_owner_eeprom_pad = 1;
     EEPROM_WRITE_VAR(i, fr3d_pred_owner_eeprom_pad);
@@ -417,7 +420,75 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         Config_ResetDefault();
     }
 #else
-    if (strncmp("V28", stored_ver, 3) == 0)
+    if (strncmp("V29", stored_ver, 3) == 0)
+    {
+        eeprom_read_mk3_payload(i);
+        EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
+        EEPROM_READ_VAR(i, fr3d_hall_pattern);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_valid);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_mask);
+        {
+          uint8_t fr3d_pred_owner_eeprom_pad = 1;
+          EEPROM_READ_VAR(i, fr3d_pred_owner_eeprom_pad);
+          (void)fr3d_pred_owner_eeprom_pad;
+        }
+        EEPROM_READ_VAR(i, fr3d_pred_enabled);
+        EEPROM_READ_VAR(i, fr3d_pred_mode);
+        EEPROM_READ_VAR(i, fr3d_pred_window_size);
+        EEPROM_READ_VAR(i, fr3d_pred_target_diam_mm);
+        EEPROM_READ_VAR(i, fr3d_pred_deadband_half_mm);
+        EEPROM_READ_VAR(i, fr3d_pred_temp_match_max_c);
+        EEPROM_READ_VAR(i, fr3d_pred_r_min);
+        EEPROM_READ_VAR(i, fr3d_pred_r_max);
+        EEPROM_READ_VAR(i, fr3d_pred_t_min);
+        EEPROM_READ_VAR(i, fr3d_pred_t_max);
+        EEPROM_READ_VAR(i, fr3d_pred_delta_r_min);
+        EEPROM_READ_VAR(i, fr3d_pred_delta_r_max);
+        EEPROM_READ_VAR(i, fr3d_pred_k_span_r);
+        EEPROM_READ_VAR(i, fr3d_pred_k_err_r);
+        EEPROM_READ_VAR(i, fr3d_pred_delta_t_min);
+        EEPROM_READ_VAR(i, fr3d_pred_delta_t_max);
+        EEPROM_READ_VAR(i, fr3d_pred_k_span_t);
+        EEPROM_READ_VAR(i, fr3d_pred_k_err_t);
+        EEPROM_READ_VAR(i, fr3d_pred_r_switch_margin);
+        EEPROM_READ_VAR(i, fr3d_pred_t_switch_margin);
+        EEPROM_READ_VAR(i, fr3d_pred_t_settle_fusions);
+        EEPROM_READ_VAR(i, fr3d_diam_jump_debounce_mm);
+        EEPROM_READ_VAR(i, fr3d_diam_pending_match_mm);
+        EEPROM_READ_VAR(i, fr3d_diam_debug_csv_enabled);
+        if (fr3d_diam_jump_debounce_mm < 0.0f) fr3d_diam_jump_debounce_mm = 0.0f;
+        else if (fr3d_diam_jump_debounce_mm > 0.5f) fr3d_diam_jump_debounce_mm = 0.5f;
+        if (fr3d_diam_pending_match_mm < 0.0f) fr3d_diam_pending_match_mm = 0.0f;
+        else if (fr3d_diam_pending_match_mm > 0.2f) fr3d_diam_pending_match_mm = 0.2f;
+        if (fr3d_diam_debug_csv_enabled > 1) fr3d_diam_debug_csv_enabled = (uint8_t)FR3D_DIAM_DEBUG_DEFAULT;
+        EEPROM_READ_VAR(i, fr3d_csv_cycle_s);
+        EEPROM_READ_VAR(i, sinfin_compression_mode);
+        #ifdef FR3D_SERIAL_HOST_DISABLE_GM
+        EEPROM_READ_VAR(i, fr3d_serial_filter_msgs);
+        fr3d_serial_filter_msgs = true; /* Always ON; not user-visible */
+        #endif
+        if (fr3d_hall_diameter_enabled > 1)
+          fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
+        if (fr3d_hall_pattern > FR3D_HALL_PATTERN_B)
+          fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
+        if (fr3d_hall_cal_valid > 1) fr3d_hall_cal_valid = 0;
+        if (sinfin_compression_mode > 1)
+          sinfin_compression_mode = DEFAULT_SINFIN_COMPRESSION;
+        if (fr3d_pred_enabled > 1) fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
+        if (fr3d_pred_mode > 1) fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
+        fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
+        if (fr3d_csv_cycle_s != 5 && fr3d_csv_cycle_s != 10)
+          fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+        updatePID();
+        eeprom_data_loaded = true;
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("Stored settings retrieved");
+    }
+    else if (strncmp("V28", stored_ver, 3) == 0)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
@@ -474,6 +545,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
         if (fr3d_csv_cycle_s != 5 && fr3d_csv_cycle_s != 10)
           fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+        fr3d_hall_migrate_from_legacy_adc();
         updatePID();
         eeprom_data_loaded = true;
         SERIAL_ECHO_START;
@@ -534,6 +606,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         if (fr3d_pred_mode > 1) fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
         fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
         fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+        fr3d_hall_migrate_from_legacy_adc();
         updatePID();
         eeprom_data_loaded = true;
         SERIAL_ECHO_START;
@@ -589,6 +662,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         if (fr3d_pred_mode > 1) fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
         fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
         fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+        fr3d_hall_migrate_from_legacy_adc();
         updatePID();
         eeprom_data_loaded = true;
         SERIAL_ECHO_START;
@@ -984,6 +1058,9 @@ void Config_ResetDefault()
  fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
  fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
  fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
+ fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
+ fr3d_hall_cal_valid = (uint8_t)FR3D_HALL_CAL_VALID_DEFAULT;
+ fr3d_hall_cal_mask = 0;
  fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
  fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
  fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;

@@ -54,6 +54,63 @@ float current_temperature_bed = 0.0;
   float fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
   float fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
   float fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
+  uint8_t fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
+  uint8_t fr3d_hall_cal_valid = (uint8_t)FR3D_HALL_CAL_VALID_DEFAULT;
+  uint8_t fr3d_hall_cal_mask = 0;
+
+  float fr3d_hall_pattern_mm(uint8_t idx)
+  {
+    if (fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
+    {
+      if (idx == 0) return FR3D_HALL_PAT_B_LO_MM;
+      if (idx == 1) return FR3D_HALL_PAT_B_MID_MM;
+      return FR3D_HALL_PAT_B_HI_MM;
+    }
+    if (idx == 0) return FR3D_HALL_PAT_A_LO_MM;
+    if (idx == 1) return FR3D_HALL_PAT_A_MID_MM;
+    return FR3D_HALL_PAT_A_HI_MM;
+  }
+
+  void fr3d_hall_set_pattern(uint8_t pat)
+  {
+    if (pat > FR3D_HALL_PATTERN_B) pat = FR3D_HALL_PATTERN_A;
+    fr3d_hall_pattern = pat;
+    fr3d_hall_cal_valid = 0;
+    fr3d_hall_cal_mask = 0;
+    fr3d_hall_cal_adc_170 = FR3D_HALL_CAL_ADC_170;
+    fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
+    fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
+    /* No arrastrar DOFF del patrón anterior al forzar recalibración. */
+    fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
+  }
+
+  void fr3d_hall_note_point_saved(uint8_t bit)
+  {
+    if (bit > 2) return;
+    fr3d_hall_cal_mask = (uint8_t)(fr3d_hall_cal_mask | (1u << bit));
+    if ((fr3d_hall_cal_mask & 0x07u) == 0x07u)
+      fr3d_hall_cal_valid = 1;
+  }
+
+  void fr3d_hall_migrate_from_legacy_adc(void)
+  {
+    const bool looks_calibrated =
+        (fr3d_hall_cal_adc_170 != FR3D_HALL_CAL_ADC_170) ||
+        (fr3d_hall_cal_adc_175 != FR3D_HALL_CAL_ADC_175) ||
+        (fr3d_hall_cal_adc_180 != FR3D_HALL_CAL_ADC_180);
+    if (looks_calibrated)
+    {
+      fr3d_hall_pattern = FR3D_HALL_PATTERN_B;
+      fr3d_hall_cal_valid = 1;
+      fr3d_hall_cal_mask = 0x07;
+    }
+    else
+    {
+      fr3d_hall_pattern = FR3D_HALL_PATTERN_A;
+      fr3d_hall_cal_valid = 0;
+      fr3d_hall_cal_mask = 0;
+    }
+  }
   uint8_t fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
   uint8_t fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
   uint8_t fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;

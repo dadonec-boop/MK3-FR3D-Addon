@@ -343,6 +343,17 @@ debug notes:
 #define FR3D_HALL_CAL_ADC_175 512.0f
 #define FR3D_HALL_CAL_ADC_180 524.0f
 #define FR3D_HALL_DIAM_OFFSET_MM_DEFAULT 0.0f
+/* Pattern presets (slot Lo/Mid/Hi = D170/D175/D180): A=wide, B=legacy tight. */
+#define FR3D_HALL_PATTERN_A 0
+#define FR3D_HALL_PATTERN_B 1
+#define FR3D_HALL_PATTERN_DEFAULT FR3D_HALL_PATTERN_A
+#define FR3D_HALL_CAL_VALID_DEFAULT 0
+#define FR3D_HALL_PAT_A_LO_MM 1.50f
+#define FR3D_HALL_PAT_A_MID_MM 1.70f
+#define FR3D_HALL_PAT_A_HI_MM 2.00f
+#define FR3D_HALL_PAT_B_LO_MM 1.70f
+#define FR3D_HALL_PAT_B_MID_MM 1.75f
+#define FR3D_HALL_PAT_B_HI_MM 1.80f
 
 // Predictor diameter (host/MK3 shared model; defaults aligned with Python tuned profile).
 #define FR3D_PRED_ENABLE_DEFAULT 1         // predictor enabled

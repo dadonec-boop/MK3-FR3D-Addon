@@ -18,6 +18,7 @@ You can use this firmware in two ways:
 | `MK3/` | Firmware sources (Arduino / Mega — flash this folder) |
 | [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip) | Ready-to-download ZIP of `MK3/` for Arduino IDE |
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
+| [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/) | Printable Hall-effect (INFIDEL-style) diameter-sensor parts (STL) |
 | [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.2) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
@@ -32,7 +33,7 @@ It does **not** include the Python host tools or the web application source.
 
 Compared with original MK3, this firmware includes:
 
-- Diameter measurement (Hall sensor) and LCD calibration helpers
+- Diameter measurement (Hall / optical) with LCD **Pattern Diameter** presets and calibration helpers
 - Diameter **predictor** with **Auto On / Off** (automatic E/T apply vs suggest-only)
 - Predictor parameter menus (basic + Advanced)
 - Compact USB host commands and CSV telemetry (5/10 s cycle)
@@ -48,7 +49,9 @@ For MK3S+ with FR3D Addon operating from the machine LCD (**standalone** — wit
 
 - [USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
 
-Covers project scope, Addon FR3D overview, diameter hardware (Hall on A3 / ARTME 3D optical), LCD main-screen use, and recommended steps for automatic predictor operation.
+Covers project scope, Addon FR3D overview, diameter hardware (Hall-effect INFIDEL-style or ARTME 3D optical), **Pattern Diameter** / calibration on the LCD, main-screen use, and recommended steps for automatic predictor operation.
+
+Printable Hall parts: [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/).
 
 ---
 

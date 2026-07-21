@@ -319,6 +319,10 @@ static void fr3d_predictor_apply_10s(void)
     fr3d_pred_set_pair("Sin accion predictor", "Hall A3 deshabilitado (DH=0)");
     return;
   }
+  if (fr3d_hall_cal_valid == 0) {
+    fr3d_pred_set_pair("Sin accion predictor", "Sensor diametro sin calibrar");
+    return;
+  }
 #else
   fr3d_pred_set_pair("Sin accion predictor", "Hall A3 no disponible");
   return;
@@ -504,8 +508,10 @@ static float fr3d_hall_adc_to_mm(float adc)
   const float x1 = fr3d_hall_cal_adc_170;
   const float x2 = fr3d_hall_cal_adc_175;
   const float x3 = fr3d_hall_cal_adc_180;
+  const float y1 = fr3d_hall_pattern_mm(0);
+  const float y2 = fr3d_hall_pattern_mm(1);
+  const float y3 = fr3d_hall_pattern_mm(2);
 
-  // Segment 1.70 -> 1.75
   auto lerp_mm = [](float x, float xa, float xb, float ya, float yb) -> float
   {
     const float den = (xb - xa);
@@ -519,10 +525,9 @@ static float fr3d_hall_adc_to_mm(float adc)
   const bool first_segment = ((x1 <= x2) && (adc <= x2)) || ((x1 >= x2) && (adc >= x2));
   if (first_segment)
   {
-    return lerp_mm(adc, x1, x2, 1.70f, 1.75f);
+    return lerp_mm(adc, x1, x2, y1, y2);
   }
-  // Segment 1.75 -> 1.80
-  return lerp_mm(adc, x2, x3, 1.75f, 1.80f);
+  return lerp_mm(adc, x2, x3, y2, y3);
 }
 
 static float fr3d_read_hall_diameter_mm(void)
