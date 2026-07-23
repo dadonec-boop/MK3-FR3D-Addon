@@ -9,6 +9,7 @@
 #if !defined(ULTRA_LCD)
 void fr3d_csv_telemetry_poll(void) {}
 void fr3d_csv_sync_sample_timer(void) {}
+void fr3d_csv_request_usb_row(void) {}
 void fr3d_diam_poll_samples(void) {}
 uint16_t fr3d_diam_fifo_avg_x1000 = 0;
 #else
@@ -26,7 +27,11 @@ uint16_t fr3d_diam_fifo_avg_x1000 = 0;
 
 static unsigned long fr3d_csv_period_ms(void)
 {
-  return (unsigned long)((fr3d_csv_cycle_s == 5) ? 5UL : 10UL) * 1000UL;
+  /* Periodo de fusión fijo (FR3D_CSV_CYCLE_S_DEFAULT = 2 s). */
+  uint8_t sec = fr3d_csv_cycle_s;
+  if (sec < (uint8_t)FR3D_CSV_CYCLE_S_MIN) sec = (uint8_t)FR3D_CSV_CYCLE_S_MIN;
+  if (sec > (uint8_t)FR3D_CSV_CYCLE_S_MAX) sec = (uint8_t)FR3D_CSV_CYCLE_S_MAX;
+  return (unsigned long)sec * 1000UL;
 }
 
 uint16_t fr3d_pred_median_10s_x1000 = 0;
@@ -42,6 +47,8 @@ float fr3d_pred_ui_last_value = 0.0f;
 static bool fr3d_csv_inited = false;
 static uint32_t fr3d_csv_seq = 0;
 static unsigned long fr3d_csv_next_ms = 0;
+static uint8_t fr3d_csv_header_sent = 0;
+static uint8_t fr3d_csv_usb_emit_pending = 0;
 static unsigned long fr3d_diam_next_sample_ms = 0;
 static float fr3d_diam_prom_10s = 0.0f;
 static float fr3d_diam_median_10s = 0.0f;
@@ -67,6 +74,9 @@ static uint16_t fr3d_diam_accepted_samples_last_csv = 0;
 static float fr3d_diam_med_raw_last_10s = 0.0f;
 static uint32_t fr3d_pred_fusion_id = 0;
 static int32_t fr3d_pred_last_t_change_fusion = -1000000000L;
+static uint8_t fr3d_pred_transport_hold_active = 0;
+static float fr3d_pred_transport_l_ref_mm = 0.0f;
+static unsigned long fr3d_pred_transport_hold_start_ms = 0;
 static uint8_t fr3d_pred_ui_track_inited = 0;
 static float fr3d_pred_ui_prev_r = 0.0f;
 static int fr3d_pred_ui_prev_t = 0;
@@ -404,6 +414,38 @@ static void fr3d_predictor_apply_10s(void)
     return;
   }
 
+  /* Hold de transporte: esperar ΔL (boquilla→sensor) o timeout tras correctivo E/T. */
+  if (fr3d_pred_transport_hold_active) {
+    const float hold_m = max(0.0f, fr3d_pred_hold_m);
+    const uint16_t hold_to_s = fr3d_pred_hold_timeout_s;
+    const unsigned long now_ms = millis();
+    const unsigned long elapsed_ms = now_ms - fr3d_pred_transport_hold_start_ms;
+    const bool timed_out = (hold_to_s > 0) && (elapsed_ms >= (unsigned long)hold_to_s * 1000UL);
+    float delta_m = 0.0f;
+    bool length_reset = false;
+    if (extrude_length + 0.5f < fr3d_pred_transport_l_ref_mm) {
+      length_reset = true;
+    } else {
+      delta_m = (extrude_length - fr3d_pred_transport_l_ref_mm) / 1000.0f;
+    }
+    const bool meters_ok = (hold_m <= 0.0001f) || (delta_m + 0.0001f >= hold_m);
+    if (length_reset || timed_out || meters_ok) {
+      fr3d_pred_transport_hold_active = 0;
+    } else {
+      char detail[170];
+      snprintf(
+          detail,
+          sizeof(detail),
+          "Hold transporte: ΔL=%.3f/%.3f m t=%lu/%u s",
+          delta_m,
+          hold_m,
+          (unsigned long)(elapsed_ms / 1000UL),
+          (unsigned int)hold_to_s);
+      fr3d_pred_set_pair("Sin accion predictor", detail);
+      return;
+    }
+  }
+
   // PREDRRNG / pasos dR actúan sobre RPM del sinfín (extruder_rpm_set), no sobre el tirador.
   const float cur_r = extruder_rpm_set;
   const int cur_t = (int)(degTargetHotend(0) + 0.5f);
@@ -463,6 +505,11 @@ static void fr3d_predictor_apply_10s(void)
       setTargetHotend0(next_t);
       fr3d_pred_last_t_change_fusion = (int32_t)fr3d_pred_fusion_id;
       changed_t = true;
+    }
+    if (changed_r || changed_t) {
+      fr3d_pred_transport_hold_active = 1;
+      fr3d_pred_transport_l_ref_mm = extrude_length;
+      fr3d_pred_transport_hold_start_ms = millis();
     }
     char main_msg[110];
     char detail[170];
@@ -827,6 +874,26 @@ static void fr3d_print_csv_row(uint32_t seq)
   MYSERIAL.println();
 }
 
+void fr3d_csv_request_usb_row(void)
+{
+  fr3d_csv_usb_emit_pending = 1;
+}
+
+static void fr3d_csv_emit_usb_if_pending(void)
+{
+  if (!fr3d_csv_usb_emit_pending)
+    return;
+  fr3d_csv_usb_emit_pending = 0;
+  if (!fr3d_csv_header_sent)
+  {
+    fr3d_print_csv_header();
+    fr3d_csv_header_sent = 1;
+  }
+  if (fr3d_csv_seq == 0)
+    fr3d_csv_seq = 1;
+  fr3d_print_csv_row(fr3d_csv_seq);
+}
+
 void fr3d_csv_telemetry_poll(void)
 {
   const unsigned long now = millis();
@@ -840,26 +907,27 @@ void fr3d_csv_telemetry_poll(void)
     fr3d_diam_min_10s = seed;
     fr3d_diam_max_10s = seed;
     fr3d_diam_window_reset(seed, now);
-    fr3d_print_csv_header();
     fr3d_csv_inited = true;
-    fr3d_csv_seq = 1;
-    fr3d_print_csv_row(fr3d_csv_seq);
+    fr3d_csv_seq = 0;
     fr3d_csv_next_ms = now + fr3d_csv_period_ms();
+    // USB CSV solo bajo demanda (CSVQ); no empujar cabecera/fila al arranque.
+    fr3d_csv_emit_usb_if_pending();
     return;
   }
 
   fr3d_diam_accumulate_until(now);
 
-  if ((long)(now - fr3d_csv_next_ms) < 0)
-    return;
-
-  fr3d_diam_close_10s_window(now);
-  fr3d_predictor_apply_10s();
-  fr3d_csv_seq++;
-  fr3d_print_csv_row(fr3d_csv_seq);
-  fr3d_csv_next_ms += fr3d_csv_period_ms();
   if ((long)(now - fr3d_csv_next_ms) >= 0)
-    fr3d_csv_next_ms = now + fr3d_csv_period_ms();
+  {
+    fr3d_diam_close_10s_window(now);
+    fr3d_predictor_apply_10s();
+    fr3d_csv_seq++;
+    fr3d_csv_next_ms += fr3d_csv_period_ms();
+    if ((long)(now - fr3d_csv_next_ms) >= 0)
+      fr3d_csv_next_ms = now + fr3d_csv_period_ms();
+  }
+
+  fr3d_csv_emit_usb_if_pending();
 }
 
 void fr3d_csv_sync_sample_timer(void)

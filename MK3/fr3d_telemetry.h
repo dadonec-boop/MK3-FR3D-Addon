@@ -4,6 +4,8 @@
 #ifdef FR3D_CSV_TELEMETRY
 void fr3d_csv_telemetry_poll(void);
 void fr3d_csv_sync_sample_timer(void);
+/** Pide una fila CSV por USB (on-demand; fusión interna fija ~2 s para predictor/LCD). */
+void fr3d_csv_request_usb_row(void);
 /** Muestreo FIFO 500 ms para LCD (llamar antes de lcd_update). */
 void fr3d_diam_poll_samples(void);
 /** Mediana de las 2 ultimas muestras FIFO (mm x1000) para LCD campo D y Hall A3. */
@@ -20,6 +22,7 @@ extern float fr3d_pred_ui_last_value;
 #else
 #define fr3d_csv_telemetry_poll() ((void)0)
 #define fr3d_csv_sync_sample_timer() ((void)0)
+#define fr3d_csv_request_usb_row() ((void)0)
 #define fr3d_diam_poll_samples() ((void)0)
 #endif
 

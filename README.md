@@ -36,8 +36,8 @@ Compared with original MK3, this firmware includes:
 - Diameter measurement (Hall / optical) with LCD **Pattern Diameter** presets and calibration helpers
 - Diameter **predictor** with **Auto On / Off** (automatic E/T apply vs suggest-only)
 - Predictor parameter menus (basic + Advanced)
-- Compact USB host commands and CSV telemetry (5/10 s cycle)
-- Extended EEPROM layout for FR3D settings (current schema **V28**)
+- Compact USB host commands and CSV telemetry (on-demand `CSVQ`; internal fusion 2 s)
+- Extended EEPROM layout for FR3D settings (current schema **V30**)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list of changes versus original MK3.
 
@@ -71,7 +71,7 @@ If you only want to flash the board, download the ready-made package:
 5. Select the correct **board** and **port**.
 6. Click **Upload**.
 
-After a first flash on an older EEPROM, the board may load hardcoded defaults (`Hardcoded Default Settings Loaded` on serial) or migrate known FR3D EEPROM versions to V28.
+After a first flash on an older EEPROM, the board may load hardcoded defaults (`Hardcoded Default Settings Loaded` on serial) or migrate known FR3D EEPROM versions to V30.
 
 ### Alternative (from source tree)
 

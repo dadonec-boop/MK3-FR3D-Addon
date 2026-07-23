@@ -66,6 +66,8 @@ extern float current_filwidth;
   void fr3d_hall_migrate_from_legacy_adc(void);
   extern uint8_t fr3d_pred_enabled, fr3d_pred_mode;
   extern uint8_t fr3d_pred_window_size, fr3d_pred_delta_t_max, fr3d_pred_t_switch_margin, fr3d_pred_t_settle_fusions;
+  extern float fr3d_pred_hold_m;
+  extern uint16_t fr3d_pred_hold_timeout_s;
   extern float fr3d_pred_target_diam_mm, fr3d_pred_deadband_half_mm, fr3d_pred_temp_match_max_c;
   extern float fr3d_diam_jump_debounce_mm, fr3d_diam_pending_match_mm;
   extern uint8_t fr3d_diam_debug_csv_enabled;

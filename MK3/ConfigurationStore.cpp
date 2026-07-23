@@ -78,10 +78,36 @@ void _EEPROM_readData(int &pos, uint8_t* value, uint8_t size)
 #ifdef DELTA
 #define EEPROM_VERSION "V11"
 #else
-#define EEPROM_VERSION "V29"
+#define EEPROM_VERSION "V30"
 #endif
 
 #ifdef EEPROM_SETTINGS
+/* Con fusión 2 s: T settle < 15 (~30 s) es legacy agresivo → piso al default. */
+static bool fr3d_pred_clamp_legacy_after_eeprom(void)
+{
+  bool changed = false;
+  if (fr3d_csv_cycle_s != (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT) {
+    fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+    changed = true;
+  }
+  if (fr3d_pred_t_settle_fusions < (uint8_t)FR3D_PRED_T_SETTLE_FUSIONS_MIN) {
+    fr3d_pred_t_settle_fusions = (uint8_t)FR3D_PRED_T_SETTLE_FUSIONS_MIN;
+    changed = true;
+  } else if (fr3d_pred_t_settle_fusions > (uint8_t)FR3D_PRED_T_SETTLE_FUSIONS_MAX) {
+    fr3d_pred_t_settle_fusions = (uint8_t)FR3D_PRED_T_SETTLE_FUSIONS_MAX;
+    changed = true;
+  }
+  if (fr3d_pred_hold_m < 0.05f || fr3d_pred_hold_m > 5.0f) {
+    fr3d_pred_hold_m = FR3D_PRED_HOLD_M_DEFAULT;
+    changed = true;
+  }
+  if (fr3d_pred_hold_timeout_s < 10 || fr3d_pred_hold_timeout_s > 600) {
+    fr3d_pred_hold_timeout_s = (uint16_t)FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT;
+    changed = true;
+  }
+  return changed;
+}
+
 void Config_StoreSettings() 
 {
   char ver[4]= "000";
@@ -183,6 +209,8 @@ void Config_StoreSettings()
   EEPROM_WRITE_VAR(i,fr3d_diam_pending_match_mm);
   EEPROM_WRITE_VAR(i,fr3d_diam_debug_csv_enabled);
   EEPROM_WRITE_VAR(i,fr3d_csv_cycle_s);
+  EEPROM_WRITE_VAR(i,fr3d_pred_hold_m);
+  EEPROM_WRITE_VAR(i,fr3d_pred_hold_timeout_s);
 #ifndef DELTA
   EEPROM_WRITE_VAR(i,sinfin_compression_mode);
   #ifdef FR3D_SERIAL_HOST_DISABLE_GM
@@ -420,7 +448,81 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         Config_ResetDefault();
     }
 #else
-    if (strncmp("V29", stored_ver, 3) == 0)
+    if (strncmp("V30", stored_ver, 3) == 0)
+    {
+        eeprom_read_mk3_payload(i);
+        EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
+        EEPROM_READ_VAR(i, fr3d_hall_pattern);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_valid);
+        EEPROM_READ_VAR(i, fr3d_hall_cal_mask);
+        {
+          uint8_t fr3d_pred_owner_eeprom_pad = 1;
+          EEPROM_READ_VAR(i, fr3d_pred_owner_eeprom_pad);
+          (void)fr3d_pred_owner_eeprom_pad;
+        }
+        EEPROM_READ_VAR(i, fr3d_pred_enabled);
+        EEPROM_READ_VAR(i, fr3d_pred_mode);
+        EEPROM_READ_VAR(i, fr3d_pred_window_size);
+        EEPROM_READ_VAR(i, fr3d_pred_target_diam_mm);
+        EEPROM_READ_VAR(i, fr3d_pred_deadband_half_mm);
+        EEPROM_READ_VAR(i, fr3d_pred_temp_match_max_c);
+        EEPROM_READ_VAR(i, fr3d_pred_r_min);
+        EEPROM_READ_VAR(i, fr3d_pred_r_max);
+        EEPROM_READ_VAR(i, fr3d_pred_t_min);
+        EEPROM_READ_VAR(i, fr3d_pred_t_max);
+        EEPROM_READ_VAR(i, fr3d_pred_delta_r_min);
+        EEPROM_READ_VAR(i, fr3d_pred_delta_r_max);
+        EEPROM_READ_VAR(i, fr3d_pred_k_span_r);
+        EEPROM_READ_VAR(i, fr3d_pred_k_err_r);
+        EEPROM_READ_VAR(i, fr3d_pred_delta_t_min);
+        EEPROM_READ_VAR(i, fr3d_pred_delta_t_max);
+        EEPROM_READ_VAR(i, fr3d_pred_k_span_t);
+        EEPROM_READ_VAR(i, fr3d_pred_k_err_t);
+        EEPROM_READ_VAR(i, fr3d_pred_r_switch_margin);
+        EEPROM_READ_VAR(i, fr3d_pred_t_switch_margin);
+        EEPROM_READ_VAR(i, fr3d_pred_t_settle_fusions);
+        EEPROM_READ_VAR(i, fr3d_diam_jump_debounce_mm);
+        EEPROM_READ_VAR(i, fr3d_diam_pending_match_mm);
+        EEPROM_READ_VAR(i, fr3d_diam_debug_csv_enabled);
+        if (fr3d_diam_jump_debounce_mm < 0.0f) fr3d_diam_jump_debounce_mm = 0.0f;
+        else if (fr3d_diam_jump_debounce_mm > 0.5f) fr3d_diam_jump_debounce_mm = 0.5f;
+        if (fr3d_diam_pending_match_mm < 0.0f) fr3d_diam_pending_match_mm = 0.0f;
+        else if (fr3d_diam_pending_match_mm > 0.2f) fr3d_diam_pending_match_mm = 0.2f;
+        if (fr3d_diam_debug_csv_enabled > 1) fr3d_diam_debug_csv_enabled = (uint8_t)FR3D_DIAM_DEBUG_DEFAULT;
+        EEPROM_READ_VAR(i, fr3d_csv_cycle_s);
+        EEPROM_READ_VAR(i, fr3d_pred_hold_m);
+        EEPROM_READ_VAR(i, fr3d_pred_hold_timeout_s);
+        EEPROM_READ_VAR(i, sinfin_compression_mode);
+        #ifdef FR3D_SERIAL_HOST_DISABLE_GM
+        EEPROM_READ_VAR(i, fr3d_serial_filter_msgs);
+        fr3d_serial_filter_msgs = true; /* Always ON; not user-visible */
+        #endif
+        if (fr3d_hall_diameter_enabled > 1)
+          fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
+        if (fr3d_hall_pattern > FR3D_HALL_PATTERN_B)
+          fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
+        if (fr3d_hall_cal_valid > 1) fr3d_hall_cal_valid = 0;
+        if (sinfin_compression_mode > 1)
+          sinfin_compression_mode = DEFAULT_SINFIN_COMPRESSION;
+        if (fr3d_pred_enabled > 1) fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
+        if (fr3d_pred_mode > 1) fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
+        fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
+        if (fr3d_csv_cycle_s != (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT)
+          fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+        if (fr3d_pred_hold_m < 0.0f || fr3d_pred_hold_m > 5.0f)
+          fr3d_pred_hold_m = FR3D_PRED_HOLD_M_DEFAULT;
+        if (fr3d_pred_hold_timeout_s > 600)
+          fr3d_pred_hold_timeout_s = (uint16_t)FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT;
+        updatePID();
+        eeprom_data_loaded = true;
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("Stored settings retrieved");
+    }
+    else if (strncmp("V29", stored_ver, 3) == 0)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
@@ -481,12 +583,15 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         if (fr3d_pred_enabled > 1) fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
         if (fr3d_pred_mode > 1) fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
         fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
-        if (fr3d_csv_cycle_s != 5 && fr3d_csv_cycle_s != 10)
+        /* Legacy 5/10 -> fusion fija 2 s. */
+        if (fr3d_csv_cycle_s != (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT)
           fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+        fr3d_pred_hold_m = FR3D_PRED_HOLD_M_DEFAULT;
+        fr3d_pred_hold_timeout_s = (uint16_t)FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT;
         updatePID();
         eeprom_data_loaded = true;
         SERIAL_ECHO_START;
-        SERIAL_ECHOLNPGM("Stored settings retrieved");
+        SERIAL_ECHOLNPGM("EEPROM V29 -> V30 migrate (PRED HOLD m/timeout)");
     }
     else if (strncmp("V28", stored_ver, 3) == 0)
     {
@@ -543,7 +648,8 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         if (fr3d_pred_enabled > 1) fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
         if (fr3d_pred_mode > 1) fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
         fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
-        if (fr3d_csv_cycle_s != 5 && fr3d_csv_cycle_s != 10)
+        /* Legacy 5/10 -> fusion fija 2 s. */
+        if (fr3d_csv_cycle_s != (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT)
           fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
         fr3d_hall_migrate_from_legacy_adc();
         updatePID();
@@ -973,8 +1079,15 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     }
 #endif
 #ifndef DELTA
-    if (eeprom_data_loaded && apply_standalone_hotend)
-      config_apply_standalone_hotend_after_retrieve();
+    if (eeprom_data_loaded) {
+      if (fr3d_pred_clamp_legacy_after_eeprom()) {
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("PRED: settle/hold clamped to firmware defaults");
+        Config_StoreSettings();
+      }
+      if (apply_standalone_hotend)
+        config_apply_standalone_hotend_after_retrieve();
+    }
 #endif
     #ifdef EEPROM_CHITCHAT
       Config_PrintSettings();
@@ -1082,6 +1195,8 @@ void Config_ResetDefault()
  fr3d_pred_r_switch_margin = FR3D_PRED_R_SWITCH_MARGIN_DEFAULT;
  fr3d_pred_t_switch_margin = (uint8_t)FR3D_PRED_T_SWITCH_MARGIN_DEFAULT;
  fr3d_pred_t_settle_fusions = (uint8_t)FR3D_PRED_T_SETTLE_FUSIONS_DEFAULT;
+ fr3d_pred_hold_m = FR3D_PRED_HOLD_M_DEFAULT;
+ fr3d_pred_hold_timeout_s = (uint16_t)FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT;
  fr3d_diam_jump_debounce_mm = FR3D_DIAM_JUMP_DEBOUNCE_MM_DEFAULT;
  fr3d_diam_pending_match_mm = FR3D_DIAM_PENDING_MATCH_MM_DEFAULT;
  fr3d_diam_debug_csv_enabled = (uint8_t)FR3D_DIAM_DEBUG_DEFAULT;

@@ -1952,9 +1952,9 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" PREDTGT/PREDDB/PREDTM/PREDTRNG/PREDRRNG/PREDDTRNG tunning");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" PREDDRRNG/PREDKR/PREDKT/PREDMARG/PREDSETTLE/PREDW");
+    SERIAL_ECHOLNPGM(" PREDDRRNG/PREDKR/PREDKT/PREDMARG/PREDSETTLE/PREDHOLDM/PREDHOLDT/PREDW");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" PREDCYCLE<5|10> CSV/predictor cycle seconds");
+    SERIAL_ECHOLNPGM(" PREDCYCLE<2> fusion period seconds (fixed 2)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" DIAMDEBUG<0|1>  CSV diam debug extra OFF/ON");
     SERIAL_ECHO_START;
@@ -1995,7 +1995,9 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHOLNPGM(" Comandos no-FR3D por USB: bloqueados");
 #ifdef FR3D_CSV_TELEMETRY
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" ST    sync muestreo CSV (+10s desde ahora)");
+    SERIAL_ECHOLNPGM(" ST    sync muestreo CSV (+ciclo desde ahora)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" CSVQ  una fila CSV por USB (on-demand; sin push periodico)");
 #endif
     return true;
   }
@@ -2065,6 +2067,8 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDKT,"); SERIAL_PROTOCOL_F(fr3d_pred_k_span_t, 3); SERIAL_ECHOPGM(","); SERIAL_PROTOCOL_F(fr3d_pred_k_err_t, 3); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMARG,"); SERIAL_PROTOCOL_F(fr3d_pred_r_switch_margin, 3); SERIAL_ECHOPGM(","); SERIAL_ECHO((int)fr3d_pred_t_switch_margin); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDSETTLE,"); SERIAL_ECHO((int)fr3d_pred_t_settle_fusions); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDHOLDM,"); SERIAL_PROTOCOL_F(fr3d_pred_hold_m, 3); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDHOLDT,"); SERIAL_ECHO((int)fr3d_pred_hold_timeout_s); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDCYCLE,"); SERIAL_ECHO((int)fr3d_csv_cycle_s); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMJDB,"); SERIAL_PROTOCOL_F(fr3d_diam_jump_debounce_mm, 4); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMJPM,"); SERIAL_PROTOCOL_F(fr3d_diam_pending_match_mm, 4); SERIAL_ECHOLNPGM(",");
@@ -2435,12 +2439,14 @@ static bool process_fr3d_compact_line()
 
   if (fr3d_cmd_prefix(p, "PREDCYCLE")) {
     long lv = 0;
-    if (!fr3d_parse_tail_long(p, 9, &lv) || (lv != 5 && lv != 10)) {
+    /* Acepta legacy 5/10 y fuerza fusión fija 2 s. */
+    if (!fr3d_parse_tail_long(p, 9, &lv) || lv < 1 || lv > 60) {
       fr3d_compact_last_error = true;
       SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDCYCLE");
       return true;
     }
-    fr3d_csv_cycle_s = (uint8_t)lv;
+    (void)lv;
+    fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
 #ifdef FR3D_CSV_TELEMETRY
     fr3d_csv_sync_sample_timer();
 #endif
@@ -2732,8 +2738,35 @@ static bool process_fr3d_compact_line()
       SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDSETTLE");
       return true;
     }
-    fr3d_pred_t_settle_fusions = (uint8_t)constrain(lv, 0L, 20L);
+    fr3d_pred_t_settle_fusions = (uint8_t)constrain(
+        lv,
+        (long)FR3D_PRED_T_SETTLE_FUSIONS_MIN,
+        (long)FR3D_PRED_T_SETTLE_FUSIONS_MAX);
     SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDSETTLE "); SERIAL_ECHOLN((int)fr3d_pred_t_settle_fusions);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDHOLDM")) {
+    float vf = 0.0f;
+    if (!fr3d_parse_tail_float(p, 9, &vf) || vf < 0.0f || vf > 5.0f) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDHOLDM");
+      return true;
+    }
+    fr3d_pred_hold_m = vf;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDHOLDM "); SERIAL_PROTOCOL_F(fr3d_pred_hold_m, 3); SERIAL_ECHOLN("");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDHOLDT")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 9, &lv)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDHOLDT");
+      return true;
+    }
+    fr3d_pred_hold_timeout_s = (uint16_t)constrain(lv, 0L, 600L);
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDHOLDT "); SERIAL_ECHOLN((int)fr3d_pred_hold_timeout_s);
     return true;
   }
 
@@ -2965,6 +2998,30 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHOPGM(" CALV=");
     SERIAL_ECHOLN((int)fr3d_hall_cal_valid);
     return true;
+  }
+
+  if (fr3d_cmd_word(p, "CSVQ")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err CSVQ extra");
+      return true;
+    }
+#ifndef FR3D_CSV_TELEMETRY
+    fr3d_compact_last_error = true;
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("err CSVQ nocfg");
+    return true;
+#else
+    fr3d_csv_request_usb_row();
+    /* Emitir en el mismo ciclo de comando (no esperar al poll). */
+    fr3d_csv_telemetry_poll();
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok CSVQ");
+    return true;
+#endif
   }
 
   if (fr3d_uc(p[0]) == 'S' && fr3d_uc(p[1]) == 'T' && (p[2] == '\0' || p[2] == ' ' || p[2] == '\t')) {

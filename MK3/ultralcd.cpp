@@ -1320,7 +1320,8 @@ static int lcd_pred_delta_t_max_edit = 1;
 static int lcd_pred_t_switch_margin_edit = 2;
 static int lcd_pred_r_switch_margin_edit = 2;
 static int lcd_pred_temp_match_edit = 2;
-static int lcd_pred_t_settle_fusions_edit = 3;
+static int lcd_pred_t_settle_fusions_edit = 15;
+static int lcd_pred_hold_timeout_edit = 60;
 static int lcd_pred_t_min_edit = 173;
 static int lcd_pred_t_max_edit = 182;
 
@@ -1344,7 +1345,11 @@ static void lcd_pred_sync_ui_edits()
     lcd_pred_t_switch_margin_edit = (int)constrain((int)fr3d_pred_t_switch_margin, 0, 20);
     lcd_pred_r_switch_margin_edit = (int)constrain((int)(fr3d_pred_r_switch_margin + 0.5f), 0, 20);
     lcd_pred_temp_match_edit = (int)constrain((int)(fr3d_pred_temp_match_max_c + 0.5f), 0, 20);
-    lcd_pred_t_settle_fusions_edit = (int)constrain((int)fr3d_pred_t_settle_fusions, 0, 20);
+    lcd_pred_t_settle_fusions_edit = (int)constrain(
+        (int)fr3d_pred_t_settle_fusions,
+        (int)FR3D_PRED_T_SETTLE_FUSIONS_MIN,
+        (int)FR3D_PRED_T_SETTLE_FUSIONS_MAX);
+    lcd_pred_hold_timeout_edit = (int)constrain((int)fr3d_pred_hold_timeout_s, 0, 600);
     lcd_pred_t_min_edit = (int)fr3d_pred_t_min;
     lcd_pred_t_max_edit = (int)fr3d_pred_t_max;
 }
@@ -1375,7 +1380,16 @@ static void lcd_pred_apply_temp_match()
 
 static void lcd_pred_apply_t_settle_fusions()
 {
-    fr3d_pred_t_settle_fusions = (uint8_t)constrain(lcd_pred_t_settle_fusions_edit, 0, 20);
+    fr3d_pred_t_settle_fusions = (uint8_t)constrain(
+        lcd_pred_t_settle_fusions_edit,
+        (int)FR3D_PRED_T_SETTLE_FUSIONS_MIN,
+        (int)FR3D_PRED_T_SETTLE_FUSIONS_MAX);
+    lcd_pred_store_settings();
+}
+
+static void lcd_pred_apply_hold_timeout()
+{
+    fr3d_pred_hold_timeout_s = (uint16_t)constrain(lcd_pred_hold_timeout_edit, 0, 600);
     lcd_pred_store_settings();
 }
 
@@ -1395,18 +1409,9 @@ static void lcd_pred_apply_t_max()
     lcd_pred_store_settings();
 }
 
-static void lcd_pred_cycle_set_5()
+static void lcd_pred_cycle_force_2()
 {
-    fr3d_csv_cycle_s = 5;
-    fr3d_csv_sync_sample_timer();
-    lcd_pred_store_settings();
-    lcd_quick_feedback();
-    menu_action_submenu(lcd_addonfr3d_predictor_advanced_menu);
-}
-
-static void lcd_pred_cycle_set_10()
-{
-    fr3d_csv_cycle_s = 10;
+    fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
     fr3d_csv_sync_sample_timer();
     lcd_pred_store_settings();
     lcd_quick_feedback();
@@ -1443,20 +1448,6 @@ static void lcd_addonfr3d_predictor_diamdebug_menu()
     END_MENU();
 }
 
-static void lcd_addonfr3d_predictor_cycle_menu()
-{
-    START_MENU();
-    MENU_ITEM(back, "Advanced", lcd_addonfr3d_predictor_advanced_menu);
-    if (fr3d_csv_cycle_s == 5) {
-        MENU_ITEM(function, "* CYCLE 5 s", lcd_pred_cycle_set_5);
-        MENU_ITEM(function, "CYCLE 10 s", lcd_pred_cycle_set_10);
-    } else {
-        MENU_ITEM(function, "CYCLE 5 s", lcd_pred_cycle_set_5);
-        MENU_ITEM(function, "* CYCLE 10 s", lcd_pred_cycle_set_10);
-    }
-    END_MENU();
-}
-
 static void lcd_addonfr3d_predictor_advanced_menu()
 {
     lcd_pred_sync_ui_edits();
@@ -1465,11 +1456,10 @@ static void lcd_addonfr3d_predictor_advanced_menu()
     MENU_ITEM_EDIT_CALLBACK(int3, "E margin", &lcd_pred_r_switch_margin_edit, 0, 20, lcd_pred_apply_r_switch_margin);
     MENU_ITEM_EDIT_CALLBACK(int3, "T margin", &lcd_pred_t_switch_margin_edit, 0, 20, lcd_pred_apply_t_switch_margin);
     MENU_ITEM_EDIT_CALLBACK(int3, "|T-Ttgt| max", &lcd_pred_temp_match_edit, 0, 20, lcd_pred_apply_temp_match);
-    MENU_ITEM_EDIT_CALLBACK(int3, "T settle N", &lcd_pred_t_settle_fusions_edit, 0, 20, lcd_pred_apply_t_settle_fusions);
-    if (fr3d_csv_cycle_s == 5)
-        MENU_ITEM(submenu, "CYCLE 5 s", lcd_addonfr3d_predictor_cycle_menu);
-    else
-        MENU_ITEM(submenu, "CYCLE 10 s", lcd_addonfr3d_predictor_cycle_menu);
+    MENU_ITEM_EDIT_CALLBACK(int3, "T settle N", &lcd_pred_t_settle_fusions_edit, FR3D_PRED_T_SETTLE_FUSIONS_MIN, FR3D_PRED_T_SETTLE_FUSIONS_MAX, lcd_pred_apply_t_settle_fusions);
+    MENU_ITEM_EDIT_CALLBACK(float32, "Hold m", &fr3d_pred_hold_m, 0.000, 5.000, lcd_pred_store_settings);
+    MENU_ITEM_EDIT_CALLBACK(int3, "Hold t s", &lcd_pred_hold_timeout_edit, 0, 600, lcd_pred_apply_hold_timeout);
+    MENU_ITEM(function, "CYCLE 2 s (fixed)", lcd_pred_cycle_force_2);
     MENU_ITEM_EDIT_CALLBACK(float32, "Med jump mm", &fr3d_diam_jump_debounce_mm, 0.000, 0.500, lcd_pred_store_settings);
     MENU_ITEM_EDIT_CALLBACK(float32, "Med conf mm", &fr3d_diam_pending_match_mm, 0.000, 0.200, lcd_pred_store_settings);
     MENU_ITEM_EDIT_CALLBACK(float32, "dE min", &fr3d_pred_delta_r_min, 0.000, 5.000, lcd_pred_store_settings);

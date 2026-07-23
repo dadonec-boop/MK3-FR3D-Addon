@@ -113,6 +113,7 @@ debug notes:
 #define DEFAULT_FR3D_SERIAL_FILTER_MSGS_ON true
 
 // USB CSV line every 10 s (header + T001 at boot); requires ULTRA_LCD for status text.
+// Fase 2+: fusión interna fija 2 s (predictor/LCD); fila CSV por USB solo con CSVQ.
 #define FR3D_CSV_TELEMETRY
 // CSV FR3D siempre activo; datos de receta/proceso los aporta el software externo.
 
@@ -376,8 +377,18 @@ debug notes:
 #define FR3D_PRED_K_ERR_T_DEFAULT 55.0f
 #define FR3D_PRED_R_SWITCH_MARGIN_DEFAULT 2.0f
 #define FR3D_PRED_T_SWITCH_MARGIN_DEFAULT 2
-#define FR3D_PRED_T_SETTLE_FUSIONS_DEFAULT 3
-#define FR3D_CSV_CYCLE_S_DEFAULT 10        // CSV/predictor cycle: 5 or 10 seconds
+/* Fusiones de espera tras cambio T. Con fusión 2 s: 15 ≈ 30 s (antes 3×10 s). */
+#define FR3D_PRED_T_SETTLE_FUSIONS_MIN 15
+#define FR3D_PRED_T_SETTLE_FUSIONS_MAX 20
+#define FR3D_PRED_T_SETTLE_FUSIONS_DEFAULT FR3D_PRED_T_SETTLE_FUSIONS_MIN
+/* Hold de transporte boquilla→sensor: metros de L_m tras correctivo E/T. */
+#define FR3D_PRED_HOLD_M_DEFAULT 0.50f
+/* Timeout del hold de transporte si L_m se resetea o tiraje muy lento. */
+#define FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT 60
+/* Periodo interno fijo de fusión predictor/LCD (USB CSV es on-demand CSVQ). */
+#define FR3D_CSV_CYCLE_S_DEFAULT 2
+#define FR3D_CSV_CYCLE_S_MIN 2
+#define FR3D_CSV_CYCLE_S_MAX 2
 
 /* Mediana CSV 10 s (Hall): debounce de salto vs valor publicado; 0 = desactivar debounce.
  * Por defecto 0.10 mm: solo cambios >0.10 vs publicado exigen confirmar ventana siguiente (más conservador que 0.04). */

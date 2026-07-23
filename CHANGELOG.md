@@ -2,6 +2,17 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [v-mk3-fr3d] — 2026-07-23
+
+### Predictor / host USB
+
+- Internal fusion cycle fixed at **2 s** (LCD selector 5/10 s removed; legacy values coerced to 2 s)
+- USB CSV emission **on demand** (`CSVQ`); no periodic CSV push over USB
+- **T settle** clamped to **15–20** fusions (default 15)
+- Transport **hold** after E/T corrective: hold meters + timeout (`PREDHOLDM` / `PREDHOLDT`, LCD Advanced)
+- EEPROM schema **V30** (migrate V29 → V30 for hold m/timeout; V28 and earlier paths retained)
+- `dist/MK3-FR3D-Addon.zip` refreshed (23 Jul 2026)
+
 ## [v-mk3-fr3d] — 2026-07-21
 
 ### Diameter sensor (LCD / Pattern Diameter)
