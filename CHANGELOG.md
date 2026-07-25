@@ -2,6 +2,14 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [pi-gateway-v0.5] — 2026-07-25
+
+### Pi Zero 2 W factory image (Release asset)
+
+- Published [`fr3daddon-v0.5-small.img.zst`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.5/fr3daddon-v0.5-small.img.zst)
+- Release notes: [`pi-gateway-v0.5`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.5)
+- Image includes gateway program **2.0.3** with OTA (`PI UPDATE GATEWAY latest`)
+
 ## [v-mk3-fr3d] — 2026-07-23
 
 ### Predictor / host USB
