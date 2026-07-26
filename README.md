@@ -7,7 +7,7 @@ Based on **MACKEREL** (Marlin-derived filament extruder firmware by Filip Mulier
 You can use this firmware in two ways:
 
 1. **Standalone** — MK3S+ with FR3D Addon from the machine LCD (no Raspberry Pi gateway / web app required)
-2. **Internet control** — optional Raspberry Pi Zero 2 W gateway + web app ([fr3d-addon.web.app](http://fr3d-addon.web.app/))
+2. **Internet control** — optional Raspberry Pi Zero 2 W **or** Windows PC gateway + web app ([fr3d-addon.web.app](http://fr3d-addon.web.app/))
 
 ---
 
@@ -20,12 +20,16 @@ You can use this firmware in two ways:
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
 | [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/) | Printable Hall-effect (INFIDEL-style) diameter-sensor parts (STL) |
 | [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.5) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
+| [Windows gateway (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/latest) | Optional Windows PC gateway package (`FR3DGateway-windows-x64.zip` — **exe binary only**) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
 
-This repository publishes **MK3 board firmware** (GPL-3.0) and, via **GitHub Releases**, a **prebuilt Pi Zero 2 W gateway image** (binary download only — gateway source is not published here).
+This repository publishes **MK3 board firmware** (GPL-3.0) and, via **GitHub Releases**, **binary-only** gateway packages:
 
-It does **not** include the Python host tools or the web application source.
+- Raspberry Pi Zero 2 W **factory SD image**
+- Windows **FR3DGateway.exe** package (dedicated PC/notebook next to the extruder)
+
+**Gateway Python source, Pi program OTA source zips, and the web app source are not published** in this repository or its Releases.
 
 ---
 
