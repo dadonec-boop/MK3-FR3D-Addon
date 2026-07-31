@@ -2,6 +2,17 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [v-mk3-fr3d] — 2026-07-31
+
+### Serial temperature limit (host `T` / `RTFP`)
+
+- Replaced the fixed USB serial ceiling (**190 °C**, later briefly **210**) with a **dynamic** cap driven by predictor **Tmax**:
+  - `serial_T_max = max(190, predictor_Tmax + 5)`
+  - hard safety clamp: `HEATER_0_MAXTEMP − 15` (~260 °C)
+- Raising **Tmax** in Predictor Parms / `PREDTRNG` (LCD or web app) therefore raises the allowed host setpoint automatically (e.g. Tmax **194** → serial up to **199 °C**; PETG Tmax **250** → up to **255 °C** within heater margin).
+- Compact HELP text for `T` updated to `0..(Tmax pred+5)`.
+- `dist/MK3-FR3D-Addon.zip` refreshed (31 Jul 2026). **Reflash the MK3 board** to apply.
+
 ## [pi-gateway-v0.5] — 2026-07-25
 
 ### Pi Zero 2 W factory image (Release asset)

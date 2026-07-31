@@ -1907,7 +1907,7 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" R<X.X>  RPM extrusor 0-40 rpm");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" T<XXX>  temperatura objetivo 0-190 grados");
+    SERIAL_ECHOLNPGM(" T<XXX>  temperatura objetivo 0..(Tmax pred+5) grados");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" F<XXX>  winder/ventilador %  0-100 %");
     SERIAL_ECHO_START;
@@ -3390,7 +3390,16 @@ static bool process_fr3d_compact_line()
     case 'T': {
       int t = (int)(vf + (vf >= 0 ? 0.5f : -0.5f));
       if (t < FR3D_SERIAL_TEMP_MIN) t = FR3D_SERIAL_TEMP_MIN;
-      if (t > FR3D_SERIAL_TEMP_MAX) t = FR3D_SERIAL_TEMP_MAX;
+      // Tope serie dinámico: Tmax del predictor + 5 °C (piso 190), con margen al HEATER_MAX.
+      int t_cap = (int)fr3d_pred_t_max + 5;
+      if (t_cap < FR3D_SERIAL_TEMP_MAX_FLOOR) t_cap = FR3D_SERIAL_TEMP_MAX_FLOOR;
+#ifdef HEATER_0_MAXTEMP
+      {
+        const int t_hard = HEATER_0_MAXTEMP - 15;
+        if (t_cap > t_hard) t_cap = t_hard;
+      }
+#endif
+      if (t > t_cap) t = t_cap;
       target_temperature[0] = t;
       SERIAL_ECHO_START;
       SERIAL_ECHOPGM("ok T ");

@@ -105,7 +105,11 @@ debug notes:
 #define FR3D_SERIAL_RPM_MIN 0.0f
 #define FR3D_SERIAL_RPM_MAX 40.0f
 #define FR3D_SERIAL_TEMP_MIN 0
-#define FR3D_SERIAL_TEMP_MAX 190
+// Piso histórico del tope serie T. El techo efectivo es dinámico:
+//   max(FR3D_SERIAL_TEMP_MAX_FLOOR, fr3d_pred_t_max + 5),
+// acotado por HEATER_0_MAXTEMP - 15 (ver clamp en MK3_main.cpp).
+#define FR3D_SERIAL_TEMP_MAX_FLOOR 190
+#define FR3D_SERIAL_TEMP_MAX FR3D_SERIAL_TEMP_MAX_FLOOR
 #define FR3D_SERIAL_FAN_MIN 0
 #define FR3D_SERIAL_FAN_MAX 100
 // true: no enviar la linea "ok" final tras comandos compactos USB OK (los echo:ok… de FR3D siguen saliendo).

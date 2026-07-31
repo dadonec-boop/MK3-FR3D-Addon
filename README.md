@@ -40,6 +40,7 @@ Compared with original MK3, this firmware includes:
 - Diameter measurement (Hall / optical) with LCD **Pattern Diameter** presets and calibration helpers
 - Diameter **predictor** with **Auto On / Off** (automatic E/T apply vs suggest-only)
 - Predictor parameter menus (basic + Advanced)
+- Host serial temperature setpoint (`T` / `RTFP`) capped dynamically at **max(190 °C, predictor Tmax + 5)**, with heater safety headroom (see CHANGELOG)
 - Compact USB host commands and CSV telemetry (on-demand `CSVQ`; internal fusion 2 s)
 - Extended EEPROM layout for FR3D settings (current schema **V30**)
 
