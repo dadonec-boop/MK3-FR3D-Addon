@@ -342,8 +342,9 @@ debug notes:
 #define  DEFAULT_fFact1 16300
 #define  DEFAULT_fFact2 9.5
 
-// FR3D optional Hall diameter path on A3 (kept disabled by default to preserve current A4 behavior).
-#define FR3D_HALL_DIAMETER_ENABLE_DEFAULT 0
+// FR3D Hall diameter path on A3: siempre habilitado (DH=1). Si no hay sensor, no se usa;
+// apagarlo por defecto dejaba el predictor en AO/AC y nadie se acordaba de reactivar DH.
+#define FR3D_HALL_DIAMETER_ENABLE_DEFAULT 1
 #define FR3D_HALL_CAL_ADC_170 500.0f
 #define FR3D_HALL_CAL_ADC_175 512.0f
 #define FR3D_HALL_CAL_ADC_180 524.0f

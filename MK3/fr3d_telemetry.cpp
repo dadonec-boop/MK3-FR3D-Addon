@@ -11,6 +11,7 @@ void fr3d_csv_telemetry_poll(void) {}
 void fr3d_csv_sync_sample_timer(void) {}
 void fr3d_csv_request_usb_row(void) {}
 void fr3d_diam_poll_samples(void) {}
+void fr3d_pred_ui_print_token(void) {}
 uint16_t fr3d_diam_fifo_avg_x1000 = 0;
 #else
 
@@ -117,8 +118,28 @@ static void fr3d_pred_ui_clear(void)
   fr3d_pred_ui_sign_char = ' ';
 }
 
+/* Estados LCD/Flutter: SIN A | A | AH | AB | AE± | AT± */
+static void fr3d_pred_ui_set_idle(char reason_c)
+{
+  if (fr3d_pred_enabled == 0 || fr3d_pred_mode == 0) {
+    fr3d_pred_ui_mode_char = '-';
+    fr3d_pred_ui_adjust_char_0 = ' ';
+    fr3d_pred_ui_adjust_char_1 = ' ';
+    fr3d_pred_ui_sign_char = ' ';
+    return;
+  }
+  fr3d_pred_ui_mode_char = 'A';
+  fr3d_pred_ui_adjust_char_0 = reason_c; /* H hold, B banda, S settle, C cal, O DH off, G gate, N no diam */
+  fr3d_pred_ui_adjust_char_1 = ' ';
+  fr3d_pred_ui_sign_char = ' ';
+}
+
 static void fr3d_pred_ui_set(char mode_c, bool changed_r, bool changed_t, float dr, int dt, float next_r, int next_t)
 {
+  if (fr3d_pred_enabled == 0 || fr3d_pred_mode == 0) {
+    fr3d_pred_ui_set_idle(' ');
+    return;
+  }
   fr3d_pred_ui_mode_char = mode_c;
   // E = corrección sobre RPM del sinfín (extruder_rpm_set); R era tirador en un diseño anterior.
   fr3d_pred_ui_adjust_char_0 = changed_r ? 'E' : (changed_t ? 'T' : ' ');
@@ -151,6 +172,27 @@ static void fr3d_pred_ui_set(char mode_c, bool changed_r, bool changed_t, float 
     fr3d_pred_ui_last_value = next_r;
     fr3d_pred_ui_last_value_valid = 1;
   }
+}
+
+void fr3d_pred_ui_print_token(void)
+{
+  /* echo:PREDUI,<token>,  — SIN A|A|AH|AB|AS|AC|AO|AG|AN|AE±|AT± */
+  SERIAL_ECHO_START;
+  SERIAL_ECHOPGM("PREDUI,");
+  if (fr3d_pred_enabled == 0 || fr3d_pred_mode == 0) {
+    SERIAL_ECHOPGM("SIN A");
+  } else {
+    const char a0 = fr3d_pred_ui_adjust_char_0;
+    const char sg = fr3d_pred_ui_sign_char;
+    SERIAL_ECHO('A');
+    if (a0 == 'H' || a0 == 'B' || a0 == 'S' || a0 == 'C' || a0 == 'G' || a0 == 'N' || a0 == 'O') {
+      SERIAL_ECHO(a0);
+    } else if ((a0 == 'E' || a0 == 'T') && (sg == '+' || sg == '-')) {
+      SERIAL_ECHO(a0);
+      SERIAL_ECHO(sg);
+    }
+  }
+  SERIAL_ECHOLNPGM(",");
 }
 
 static uint16_t fr3d_quantize_mm_x1000(float mm)
@@ -319,6 +361,7 @@ static void fr3d_predictor_apply_10s(void)
    * PAUT/lazo automático de pulling u órdenes PR en manual, no este predictor. */
   fr3d_pred_ui_clear();
   if (fr3d_pred_enabled == 0) {
+    fr3d_pred_ui_set_idle(' ');
     fr3d_pred_set_pair("Predictor MK3 deshabilitado", "PREDEN=0");
     return;
   }
@@ -326,14 +369,17 @@ static void fr3d_predictor_apply_10s(void)
   // Regla de oro: MK3 predictor solo si el medidor de diámetro local (Hall A3) está habilitado.
 #if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
   if (fr3d_hall_diameter_enabled == 0) {
+    fr3d_pred_ui_set_idle('O'); /* AO: Hall deshabilitado (DH=0) — distinto de AC */
     fr3d_pred_set_pair("Sin accion predictor", "Hall A3 deshabilitado (DH=0)");
     return;
   }
   if (fr3d_hall_cal_valid == 0) {
-    fr3d_pred_set_pair("Sin accion predictor", "Sensor diametro sin calibrar");
+    fr3d_pred_ui_set_idle('C'); /* AC: CALV=0 */
+    fr3d_pred_set_pair("Sin accion predictor", "Sensor diametro sin calibrar (CALV=0)");
     return;
   }
 #else
+  fr3d_pred_ui_set_idle('O');
   fr3d_pred_set_pair("Sin accion predictor", "Hall A3 no disponible");
   return;
 #endif
@@ -346,6 +392,7 @@ static void fr3d_predictor_apply_10s(void)
   const bool run_state_ok = ((extrude_status & ES_HOT_SET) != 0) && ((extrude_status & ES_SWITCH_SET) != 0);
   const bool pull_auto_ok = (extrude_status & ES_AUTO_SET) != 0;
   if (!es1_ok || !run_state_ok || !pull_auto_ok) {
+    fr3d_pred_ui_set_idle('G'); /* AG: gate ES/RUN/PULL_AUTO */
     fr3d_pred_set_pair("Sin accion predictor", "Gate: ES/RUN/PULL_AUTO no cumplido");
     return;
   }
@@ -353,15 +400,18 @@ static void fr3d_predictor_apply_10s(void)
   const float t_act = degHotend(0);
   const float t_tgt = degTargetHotend(0);
   if (!(t_act >= 0.0f && t_tgt >= 0.0f)) {
+    fr3d_pred_ui_set_idle('G');
     fr3d_pred_set_pair("Sin accion predictor", "Temperaturas invalidas");
     return;
   }
   if (fr3d_absf(t_act - t_tgt) > fr3d_pred_temp_match_max_c) {
+    fr3d_pred_ui_set_idle('G');
     fr3d_pred_set_pair("Sin accion predictor", "Tact/Ttgt fuera de ventana");
     return;
   }
 
   if (fr3d_diam_samples_n == 0) {
+    fr3d_pred_ui_set_idle('N'); /* AN: sin muestras diametro */
     fr3d_pred_set_pair("Sin accion predictor", "Sin datos de diametro en ventana");
     return;
   }
@@ -378,6 +428,7 @@ static void fr3d_predictor_apply_10s(void)
     fr3d_pred_margin_corner_streak = 0;
     char detail[170];
     snprintf(detail, sizeof(detail), "d=%.3f en banda [%.3f..%.3f]", d_mean, band_lo, band_hi);
+    fr3d_pred_ui_set_idle('B');
     fr3d_pred_set_pair("Sin accion predictor", detail);
     return;
   }
@@ -410,6 +461,7 @@ static void fr3d_predictor_apply_10s(void)
       age_t < (int32_t)fr3d_pred_t_settle_fusions) {
     char detail[170];
     snprintf(detail, sizeof(detail), "Settling T activo: %ld/%u", (long)age_t, (unsigned int)fr3d_pred_t_settle_fusions);
+    fr3d_pred_ui_set_idle('S'); /* LCD/Flutter: AS */
     fr3d_pred_set_pair("Sin accion predictor", detail);
     return;
   }
@@ -441,6 +493,7 @@ static void fr3d_predictor_apply_10s(void)
           hold_m,
           (unsigned long)(elapsed_ms / 1000UL),
           (unsigned int)hold_to_s);
+      fr3d_pred_ui_set_idle('H');
       fr3d_pred_set_pair("Sin accion predictor", detail);
       return;
     }
@@ -544,9 +597,8 @@ static void fr3d_predictor_apply_10s(void)
         step_t,
         fr3d_pred_margin_bypass ? " MARGIN_BYPASS" : "");
     fr3d_pred_set_pair(main_msg, detail);
-    changed_r = (next_r != cur_r);
-    changed_t = (next_t != cur_t);
-    fr3d_pred_ui_set('M', changed_r, changed_t, next_r - cur_r, next_t - cur_t, next_r, next_t);
+    /* Auto OFF: LCD/Flutter = SIN A (sin tokens E/T). */
+    fr3d_pred_ui_set_idle(' ');
   }
 }
 

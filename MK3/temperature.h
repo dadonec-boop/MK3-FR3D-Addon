@@ -64,6 +64,13 @@ extern float current_filwidth;
   void fr3d_hall_set_pattern(uint8_t pat);
   void fr3d_hall_note_point_saved(uint8_t bit);
   void fr3d_hall_migrate_from_legacy_adc(void);
+  /** true si los 3 ADC guardados no son los defaults de fábrica. */
+  uint8_t fr3d_hall_points_look_saved(void);
+  /**
+   * Si CALV=0 pero hay 3 puntos guardados, pone CALV=1 y mask=7.
+   * Devuelve 1 si quedó calibrado (ya lo estaba o se reparó).
+   */
+  uint8_t fr3d_hall_activate_saved_cal(void);
   extern uint8_t fr3d_pred_enabled, fr3d_pred_mode;
   extern uint8_t fr3d_pred_window_size, fr3d_pred_delta_t_max, fr3d_pred_t_switch_margin, fr3d_pred_t_settle_fusions;
   extern float fr3d_pred_hold_m;

@@ -19,11 +19,14 @@ extern char fr3d_pred_ui_last_axis_char;
 extern char fr3d_pred_ui_last_sign_char;
 extern uint8_t fr3d_pred_ui_last_value_valid;
 extern float fr3d_pred_ui_last_value;
+/** Imprime echo:PREDUI,<token>, (SIN A | A | AH | AB | AE± | AT±). */
+void fr3d_pred_ui_print_token(void);
 #else
 #define fr3d_csv_telemetry_poll() ((void)0)
 #define fr3d_csv_sync_sample_timer() ((void)0)
 #define fr3d_csv_request_usb_row() ((void)0)
 #define fr3d_diam_poll_samples() ((void)0)
+#define fr3d_pred_ui_print_token() ((void)0)
 #endif
 
 #endif

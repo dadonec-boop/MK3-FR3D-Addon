@@ -503,9 +503,14 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         #endif
         if (fr3d_hall_diameter_enabled > 1)
           fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
+        /* DH siempre ON (EEPROM puede traer 0 de FW viejo). */
+        fr3d_hall_diameter_enabled = 1;
         if (fr3d_hall_pattern > FR3D_HALL_PATTERN_B)
           fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
         if (fr3d_hall_cal_valid > 1) fr3d_hall_cal_valid = 0;
+        /* Update FW: si hay 3 ADC guardados pero CALV quedó en 0, reactivar. */
+        if (fr3d_hall_cal_valid == 0)
+          (void)fr3d_hall_activate_saved_cal();
         if (sinfin_compression_mode > 1)
           sinfin_compression_mode = DEFAULT_SINFIN_COMPRESSION;
         if (fr3d_pred_enabled > 1) fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
@@ -575,9 +580,14 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         #endif
         if (fr3d_hall_diameter_enabled > 1)
           fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
+        /* DH siempre ON (EEPROM puede traer 0 de FW viejo). */
+        fr3d_hall_diameter_enabled = 1;
         if (fr3d_hall_pattern > FR3D_HALL_PATTERN_B)
           fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
         if (fr3d_hall_cal_valid > 1) fr3d_hall_cal_valid = 0;
+        /* Update FW: si hay 3 ADC guardados pero CALV quedó en 0, reactivar. */
+        if (fr3d_hall_cal_valid == 0)
+          (void)fr3d_hall_activate_saved_cal();
         if (sinfin_compression_mode > 1)
           sinfin_compression_mode = DEFAULT_SINFIN_COMPRESSION;
         if (fr3d_pred_enabled > 1) fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
@@ -1080,6 +1090,8 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
 #endif
 #ifndef DELTA
     if (eeprom_data_loaded) {
+      /* DH siempre ON: no depender de un flag que nadie recuerda. */
+      fr3d_hall_diameter_enabled = 1;
       if (fr3d_pred_clamp_legacy_after_eeprom()) {
         SERIAL_ECHO_START;
         SERIAL_ECHOLNPGM("PRED: settle/hold clamped to firmware defaults");

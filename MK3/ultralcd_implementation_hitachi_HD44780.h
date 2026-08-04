@@ -502,16 +502,21 @@ static void lcd_implementation_status_screen()
       if (d_lcd_x1000 > 9999U) d_lcd_x1000 = 9999U;
       if (d_prom_x1000 > 9999U) d_prom_x1000 = 9999U;
 
-      // A = Predictor Auto ON; - = Predictor Auto OFF
-      char mode_c = fr3d_pred_mode ? 'A' : '-';
-      // E+/E- = último ajuste predictor sobre sinfín; T+/T- = bloque; blank = sin acción
+      // A / AH / AB / AE± / AT± = Auto; - = SIN A (Auto OFF o PREDEN=0)
+      const bool auto_on = fr3d_pred_mode && fr3d_pred_enabled;
+      char mode_c = auto_on ? 'A' : '-';
       char tok0 = ' ';
       char tok1 = ' ';
-      char adj0 = fr3d_pred_ui_adjust_char_0;
-      char sign_c = fr3d_pred_ui_sign_char;
-      if ((adj0 == 'E' || adj0 == 'T') && (sign_c == '+' || sign_c == '-')) {
-        tok0 = (adj0 == 'E') ? 'E' : LCD_STR_THERMOMETER[0];
-        tok1 = sign_c;
+      if (auto_on) {
+        char adj0 = fr3d_pred_ui_adjust_char_0;
+        char sign_c = fr3d_pred_ui_sign_char;
+        if (adj0 == 'H' || adj0 == 'B' || adj0 == 'S' || adj0 == 'C' || adj0 == 'G' || adj0 == 'N' || adj0 == 'O') {
+          tok0 = adj0;
+          tok1 = ' ';
+        } else if ((adj0 == 'E' || adj0 == 'T') && (sign_c == '+' || sign_c == '-')) {
+          tok0 = (adj0 == 'E') ? 'E' : LCD_STR_THERMOMETER[0];
+          tok1 = sign_c;
+        }
       }
 
       snprintf(

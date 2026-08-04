@@ -1938,6 +1938,8 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" HPATA/HPATB preset patrones A(1.5/1.7/2.0) B(1.7/1.75/1.8); invalida CALV");
     SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" CALV1 reactiva CALV si hay 3 ADC guardados (tras flash)");
+    SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" C170/C175/C180 capturar ADC actual A3 para patron");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" QUERY incluye PAT,CALV,A3,<adc>; DLCD,<mm> diametro LCD (D)");
@@ -2041,7 +2043,7 @@ static bool process_fr3d_compact_line()
     /* SWmid = Ø objetivo (menú Filament / EEPROM), no el punto medio entre SWmin/SWmax (ventana runout). */
     SERIAL_ECHO_START; SERIAL_ECHOPGM("SWmid,"); SERIAL_ECHO(filament_width_desired); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("SWmax,"); SERIAL_ECHO(sensorRunoutMax); SERIAL_ECHOLNPGM(",");
-    SERIAL_ECHO_START; SERIAL_ECHOPGM("DH,"); SERIAL_ECHO(1); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DH,"); SERIAL_ECHO((int)fr3d_hall_diameter_enabled); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("A3,"); SERIAL_ECHO(fr3d_hall_adc_read_now()); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PAT,"); SERIAL_ECHO((fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? 'B' : 'A'); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("CALV,"); SERIAL_ECHO((int)fr3d_hall_cal_valid); SERIAL_ECHOLNPGM(",");
@@ -2055,6 +2057,9 @@ static bool process_fr3d_compact_line()
 #endif
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDEN,"); SERIAL_ECHO((int)fr3d_pred_enabled); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMODE,"); SERIAL_ECHO((int)fr3d_pred_mode); SERIAL_ECHOLNPGM(",");
+#ifdef FR3D_CSV_TELEMETRY
+    fr3d_pred_ui_print_token();
+#endif
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDW,"); SERIAL_ECHO((int)fr3d_pred_window_size); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDTGT,"); SERIAL_PROTOCOL_F(fr3d_pred_target_diam_mm, 3); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDDB,"); SERIAL_PROTOCOL_F(fr3d_pred_deadband_half_mm, 4); SERIAL_ECHOLNPGM(",");
@@ -2349,11 +2354,12 @@ static bool process_fr3d_compact_line()
       SERIAL_ECHOLNPGM("err DH range");
       return true;
     }
+    /* DH siempre activo: DH0 se ignora (nadie se acuerda de reactivarlo). */
     (void)vf;
     fr3d_hall_diameter_enabled = 1;
     SERIAL_ECHO_START;
     SERIAL_ECHOPGM("ok DH ");
-    SERIAL_ECHOLN(1);
+    SERIAL_ECHOLN((int)fr3d_hall_diameter_enabled);
     return true;
   }
 
@@ -2387,6 +2393,9 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START; SERIAL_ECHOLNPGM("ok PREDQ");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDEN,"); SERIAL_ECHO((int)fr3d_pred_enabled); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMODE,"); SERIAL_ECHO((int)fr3d_pred_mode); SERIAL_ECHOLNPGM(",");
+#ifdef FR3D_CSV_TELEMETRY
+    fr3d_pred_ui_print_token();
+#endif
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDW,"); SERIAL_ECHO((int)fr3d_pred_window_size); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDTGT,"); SERIAL_PROTOCOL_F(fr3d_pred_target_diam_mm, 3); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDDB,"); SERIAL_PROTOCOL_F(fr3d_pred_deadband_half_mm, 4); SERIAL_ECHOLNPGM(",");
@@ -2997,6 +3006,34 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO(ch);
     SERIAL_ECHOPGM(" CALV=");
     SERIAL_ECHOLN((int)fr3d_hall_cal_valid);
+    return true;
+  }
+
+  /* CALV1 — reactivar flag si hay 3 ADC guardados (tras flash / CALV perdido). */
+  if (fr3d_cmd_word(p, "CALV1")) {
+    char *r = p + 5;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err CALV1 extra");
+      return true;
+    }
+    const uint8_t ok = fr3d_hall_activate_saved_cal();
+    if (!ok) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err CALV1 no points");
+      return true;
+    }
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok CALV1 CALV=");
+    SERIAL_ECHO((int)fr3d_hall_cal_valid);
+    SERIAL_ECHOPGM(" DH=");
+    SERIAL_ECHOLN((int)fr3d_hall_diameter_enabled);
     return true;
   }
 

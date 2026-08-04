@@ -111,6 +111,36 @@ float current_temperature_bed = 0.0;
       fr3d_hall_cal_mask = 0;
     }
   }
+
+  uint8_t fr3d_hall_points_look_saved(void)
+  {
+    /* Defaults de fábrica (Configuration.h): si los 3 coinciden, no hay cal real. */
+    if (fr3d_hall_cal_adc_170 == FR3D_HALL_CAL_ADC_170 &&
+        fr3d_hall_cal_adc_175 == FR3D_HALL_CAL_ADC_175 &&
+        fr3d_hall_cal_adc_180 == FR3D_HALL_CAL_ADC_180)
+      return 0;
+    /* Exigir que los tres slots sean distintos (cal de 3 puntos usable). */
+    if (fr3d_hall_cal_adc_170 == fr3d_hall_cal_adc_175) return 0;
+    if (fr3d_hall_cal_adc_175 == fr3d_hall_cal_adc_180) return 0;
+    if (fr3d_hall_cal_adc_170 == fr3d_hall_cal_adc_180) return 0;
+    return 1;
+  }
+
+  uint8_t fr3d_hall_activate_saved_cal(void)
+  {
+    if (fr3d_hall_cal_valid)
+    {
+      /* Calibrado: asegurar que el medidor esté habilitado para el predictor. */
+      fr3d_hall_diameter_enabled = 1;
+      return 1;
+    }
+    if (!fr3d_hall_points_look_saved())
+      return 0;
+    fr3d_hall_cal_valid = 1;
+    fr3d_hall_cal_mask = 0x07;
+    fr3d_hall_diameter_enabled = 1;
+    return 1;
+  }
   uint8_t fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
   uint8_t fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
   uint8_t fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
