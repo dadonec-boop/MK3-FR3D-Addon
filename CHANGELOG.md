@@ -2,6 +2,23 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [v-mk3-fr3d] — 2026-08-04
+
+### Predictor UI / Hall diameter
+
+- LCD / host state tokens: `SIN A`, `A`, `AH`, `AB`, `AS`, `AC`, `AO`, `AG`, `AN`, `AE±`, `AT±` (`PREDUI` in QUERY)
+- `AC` = calibration invalid (`CALV=0`); `AO` = Hall off (`DH=0`) — no longer shared as one code
+- Hall diameter path **always ON** (`DH=1` default; `DH0` ignored; EEPROM load forces ON)
+- QUERY reports real `DH`; `CALV1` reactivates saved cal and enables Hall
+- `dist/MK3-FR3D-Addon.zip` refreshed (4 Aug 2026)
+
+## [pi-gateway-v0.7] — 2026-08-04
+
+### Pi Zero 2 W factory image (Release asset)
+
+- Published [`fr3daddon-v0.7-small.img.zst`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.7/fr3daddon-v0.7-small.img.zst)
+- Release notes: [`pi-gateway-v0.7`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.7)
+
 ## [v-mk3-fr3d] — 2026-07-31
 
 ### Serial temperature limit (host `T` / `RTFP`)
