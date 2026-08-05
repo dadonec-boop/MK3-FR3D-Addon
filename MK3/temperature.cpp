@@ -73,7 +73,8 @@ float current_temperature_bed = 0.0;
 
   void fr3d_hall_set_pattern(uint8_t pat)
   {
-    if (pat > FR3D_HALL_PATTERN_B) pat = FR3D_HALL_PATTERN_A;
+    if (pat > FR3D_HALL_PATTERN_B)
+      pat = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
     fr3d_hall_pattern = pat;
     fr3d_hall_cal_valid = 0;
     fr3d_hall_cal_mask = 0;
@@ -106,7 +107,7 @@ float current_temperature_bed = 0.0;
     }
     else
     {
-      fr3d_hall_pattern = FR3D_HALL_PATTERN_A;
+      fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
       fr3d_hall_cal_valid = 0;
       fr3d_hall_cal_mask = 0;
     }

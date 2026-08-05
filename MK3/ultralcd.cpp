@@ -1157,7 +1157,7 @@ static void lcd_hall_capture_live_screen()
     else if (lcd_hall_capture_point == 175)
       title = (fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? PSTR("Cal 1.75 C/S") : PSTR("Cal 1.70 C/S");
     else if (lcd_hall_capture_point == 180)
-      title = (fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? PSTR("Cal 1.80 C/S") : PSTR("Cal 2.00 C/S");
+      title = PSTR("Cal 2.00 C/S");
 
     if (lcdDrawUpdate)
     {
@@ -1272,13 +1272,13 @@ static void lcd_hall_pattern_menu()
     MENU_ITEM(back, "Diameter Sensor", lcd_addonfr3d_hall_a3_menu);
     if (fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
     {
-      MENU_ITEM(function, "Now 1.7/1.75/1.8", lcd_hall_now_info);
+      MENU_ITEM(function, "Now 1.7/1.75/2.0", lcd_hall_now_info);
       MENU_ITEM(function, "Set 1.5/1.7/2.0", lcd_hall_pattern_set_a);
     }
     else
     {
       MENU_ITEM(function, "Now 1.5/1.7/2.0", lcd_hall_now_info);
-      MENU_ITEM(function, "Set 1.7/1.75/1.8", lcd_hall_pattern_set_b);
+      MENU_ITEM(function, "Set 1.7/1.75/2.0", lcd_hall_pattern_set_b);
     }
     END_MENU();
 }
@@ -1291,7 +1291,7 @@ static void lcd_hall_calibrate_menu()
     {
       MENU_ITEM(function, "Capture 1.70", lcd_hall_capture_170);
       MENU_ITEM(function, "Capture 1.75", lcd_hall_capture_175);
-      MENU_ITEM(function, "Capture 1.80", lcd_hall_capture_180);
+      MENU_ITEM(function, "Capture 2.00", lcd_hall_capture_180);
     }
     else
     {

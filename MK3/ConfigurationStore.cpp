@@ -78,7 +78,7 @@ void _EEPROM_readData(int &pos, uint8_t* value, uint8_t size)
 #ifdef DELTA
 #define EEPROM_VERSION "V11"
 #else
-#define EEPROM_VERSION "V30"
+#define EEPROM_VERSION "V31"
 #endif
 
 #ifdef EEPROM_SETTINGS
@@ -448,7 +448,9 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         Config_ResetDefault();
     }
 #else
-    if (strncmp("V30", stored_ver, 3) == 0)
+    const bool migrate_v30_hall_pattern_b =
+      (strncmp("V30", stored_ver, 3) == 0);
+    if (strncmp("V31", stored_ver, 3) == 0 || migrate_v30_hall_pattern_b)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
@@ -508,6 +510,21 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         if (fr3d_hall_pattern > FR3D_HALL_PATTERN_B)
           fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
         if (fr3d_hall_cal_valid > 1) fr3d_hall_cal_valid = 0;
+        /*
+         * V30 calibraba el slot Hi del patrón B con 1.80 mm. V31 lo cambia
+         * a 2.00 mm: esos ADC no son reutilizables. Invalidar y volver a los
+         * defaults evita publicar CALV=1 con una curva físicamente incorrecta.
+         */
+        if (migrate_v30_hall_pattern_b &&
+            fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
+        {
+          fr3d_hall_cal_adc_170 = FR3D_HALL_CAL_ADC_170;
+          fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
+          fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
+          fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
+          fr3d_hall_cal_valid = 0;
+          fr3d_hall_cal_mask = 0;
+        }
         /* Update FW: si hay 3 ADC guardados pero CALV quedó en 0, reactivar. */
         if (fr3d_hall_cal_valid == 0)
           (void)fr3d_hall_activate_saved_cal();
@@ -523,6 +540,12 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         if (fr3d_pred_hold_timeout_s > 600)
           fr3d_pred_hold_timeout_s = (uint16_t)FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT;
         updatePID();
+        if (migrate_v30_hall_pattern_b)
+        {
+          SERIAL_ECHO_START;
+          SERIAL_ECHOLNPGM("EEPROM V30 -> V31 Hall pattern B 2.00");
+          Config_StoreSettings();
+        }
         eeprom_data_loaded = true;
         SERIAL_ECHO_START;
         SERIAL_ECHOLNPGM("Stored settings retrieved");

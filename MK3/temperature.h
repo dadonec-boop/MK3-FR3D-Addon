@@ -57,7 +57,7 @@ extern float current_filwidth;
   extern uint8_t fr3d_hall_diameter_enabled;
   extern float fr3d_hall_cal_adc_170, fr3d_hall_cal_adc_175, fr3d_hall_cal_adc_180;
   extern float fr3d_hall_diam_offset_mm;
-  extern uint8_t fr3d_hall_pattern;     /* 0=A (1.5/1.7/2.0), 1=B (1.7/1.75/1.8) */
+  extern uint8_t fr3d_hall_pattern;     /* 0=A (1.5/1.7/2.0), 1=B (1.7/1.75/2.0) */
   extern uint8_t fr3d_hall_cal_valid;   /* 1 = three pattern points calibrated */
   extern uint8_t fr3d_hall_cal_mask;    /* bits 0/1/2 = Lo/Mid/Hi points saved */
   float fr3d_hall_pattern_mm(uint8_t idx);

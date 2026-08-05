@@ -1936,7 +1936,7 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" DOFF<mm> offset diametro Hall A3 (-0.20..0.20)");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" HPATA/HPATB preset patrones A(1.5/1.7/2.0) B(1.7/1.75/1.8); invalida CALV");
+    SERIAL_ECHOLNPGM(" HPATA/HPATB preset patrones A(1.5/1.7/2.0) B(1.7/1.75/2.0); invalida CALV");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" CALV1 reactiva CALV si hay 3 ADC guardados (tras flash)");
     SERIAL_ECHO_START;
