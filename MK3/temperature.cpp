@@ -12,6 +12,9 @@
 #include "temperature.h"
 #include "watchdog.h"
 #include "language.h"
+#ifdef FR3D_CSV_TELEMETRY
+extern uint8_t fr3d_diam_src; /* !=0 HOST USB/MANUAL: no gastar ADC en A3 */
+#endif
 
 /* Opcional: descomentar para depurar thermal runaway (inunda USB con líneas TEMP/TARGET en estado estable). */
 /* #define THERMAL_RUNAWAY_DEBUG_SERIAL */
@@ -144,6 +147,7 @@ float current_temperature_bed = 0.0;
   }
   uint8_t fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
   uint8_t fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
+  uint8_t fr3d_pred_optimize = 0;
   uint8_t fr3d_pred_window_size = (uint8_t)FR3D_PRED_WINDOW_SIZE_DEFAULT;
   float fr3d_pred_target_diam_mm = FR3D_PRED_TARGET_DIAM_MM_DEFAULT;
   float fr3d_pred_deadband_half_mm = FR3D_PRED_DEADBAND_HALF_MM_DEFAULT;
@@ -1499,7 +1503,12 @@ ISR(TIMER0_COMPB_vect)
        raw_filwidth_value= raw_filwidth_value + (ADC<<5);  //add new ADC reading
       #endif
 #if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
-      temp_state = 11;
+#ifdef FR3D_CSV_TELEMETRY
+      if (fr3d_diam_src != 0)
+        temp_state = 0; /* USB/Manual: no conversion A3 */
+      else
+#endif
+        temp_state = 11;
 #else
       temp_state = 0;
 #endif
@@ -1507,6 +1516,13 @@ ISR(TIMER0_COMPB_vect)
 
 #if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
     case 11: // Prepare FR3D Hall (mismo ISR que temp: evita cli() largo que corta soft-PWM del hotend)
+#ifdef FR3D_CSV_TELEMETRY
+      if (fr3d_diam_src != 0) {
+        lcd_buttons_update();
+        temp_state = 0;
+        break;
+      }
+#endif
       #if FR3D_HALL_DIAMETER_PIN > 7
         ADCSRB = 1 << MUX5;
       #else
@@ -1518,7 +1534,10 @@ ISR(TIMER0_COMPB_vect)
       temp_state = 12;
       break;
     case 12: // Measure FR3D Hall
-      raw_fr3d_hall_value += ADC;
+#ifdef FR3D_CSV_TELEMETRY
+      if (fr3d_diam_src == 0)
+#endif
+        raw_fr3d_hall_value += ADC;
       temp_state = 0;
       break;
 #endif

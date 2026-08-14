@@ -2,6 +2,23 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [v-mk3-fr3d] — 2026-08-13
+
+### Diameter sensor sources (exclusive)
+
+- `DIAMSRC` / LCD **Source**: **Analog A3** XOR **Digital USB (BDWidth host)** XOR **Manual (mock)**
+- Manual Ø from LCD (`D mm`) or host; QUERY reports source for web CONFIG / predictor
+- Older boards without `DIAMSRC` keep Analog A3 only
+- `dist/MK3-FR3D-Addon.zip` refreshed (13 Aug 2026). **Reflash the MK3 board** to use USB/Manual sources.
+
+## [gateway-v2.4.1] — 2026-08-13
+
+### Gateway program (Pi OTA + Windows)
+
+- Release tag [`gateway-v2.4.1`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/gateway-v2.4.1): Pi OTA zip, Windows x64 zip, MK3 firmware zip
+- Pi: LAN Flutter UI + local `/api` alongside Firebase; BDWidth USB path; reject USB/Manual on legacy MK3
+- Update Pi with CONSOLE `PI UPDATE GATEWAY latest` (does not replace the SD factory image)
+
 ## [v-mk3-fr3d] — 2026-08-04
 
 ### Predictor UI / Hall diameter

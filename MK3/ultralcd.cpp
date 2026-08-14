@@ -64,6 +64,7 @@ static void lcd_addonfr3d_gateway_id_screen();
 static void lcd_addonfr3d_predictor_advanced_menu();
 static void lcd_pred_store_settings();
 static void lcd_pred_apply_auto_on();
+static void lcd_pred_apply_opt_on();
 static void lcd_settings_menu_back();
 static void lcd_control_temperature_preheat_pla_settings_menu();
 static void lcd_control_temperature_preheat_abs_settings_menu();
@@ -211,6 +212,7 @@ menuFunc_t callbackFunc;
 float raw_Ki, raw_Kd;
 
 static bool lcd_pred_auto_on = false;
+static bool lcd_pred_opt_on = false;
 
 /* Main status screen. It's up to the implementation specific part to show what is needed. As this is very display dependent */
 static void lcd_status_screen()
@@ -344,6 +346,10 @@ void lcd_extruder_pause()
     
     digitalWrite(CONTROLLERFAN_PIN, 0); //stop fan
     lcd_disable_statistics();
+#ifdef FR3D_CSV_TELEMETRY
+    fr3d_pred_on_extrude_stop();
+#endif
+    lcd_pred_opt_on = false;
 
     LCD_MESSAGEPGM(MSG_EXTRUDER_STOPPED);
 }
@@ -1283,6 +1289,67 @@ static void lcd_hall_pattern_menu()
     END_MENU();
 }
 
+#ifdef FR3D_CSV_TELEMETRY
+static float lcd_diam_manual_edit = 1.75f;
+
+static void lcd_diam_manual_store()
+{
+    fr3d_diam_host_set(lcd_diam_manual_edit);
+    lcd_diam_manual_edit = fr3d_diam_host_get();
+}
+
+static void lcd_diam_src_set_a3()
+{
+    fr3d_diam_src_set(0);
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    lcd_quick_feedback();
+    menu_action_submenu(lcd_addonfr3d_hall_a3_menu);
+}
+
+static void lcd_diam_src_set_usb()
+{
+    fr3d_diam_src_set(1);
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    lcd_quick_feedback();
+    menu_action_submenu(lcd_addonfr3d_hall_a3_menu);
+}
+
+static void lcd_diam_src_set_manual()
+{
+    fr3d_diam_src_set(2);
+    lcd_diam_manual_edit = fr3d_diam_host_get();
+    fr3d_diam_host_set(lcd_diam_manual_edit);
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    lcd_quick_feedback();
+    menu_action_submenu(lcd_addonfr3d_hall_a3_menu);
+}
+
+static void lcd_diam_src_menu()
+{
+    START_MENU();
+    MENU_ITEM(back, "Diameter Sensor", lcd_addonfr3d_hall_a3_menu);
+    if (fr3d_diam_src == 0)
+        MENU_ITEM(function, "* Analog A3", lcd_diam_src_set_a3);
+    else
+        MENU_ITEM(function, "Analog A3", lcd_diam_src_set_a3);
+    if (fr3d_diam_src == 1)
+        MENU_ITEM(function, "* Digital USB", lcd_diam_src_set_usb);
+    else
+        MENU_ITEM(function, "Digital USB", lcd_diam_src_set_usb);
+    if (fr3d_diam_src == 2)
+        MENU_ITEM(function, "* Manual", lcd_diam_src_set_manual);
+    else
+        MENU_ITEM(function, "Manual", lcd_diam_src_set_manual);
+    END_MENU();
+}
+#endif
+
 static void lcd_hall_calibrate_menu()
 {
     START_MENU();
@@ -1307,12 +1374,29 @@ static void lcd_addonfr3d_hall_a3_menu()
     lcd_hall_offset_ui_refresh();
     START_MENU();
     MENU_ITEM(back, "AddonFR3D", lcd_addonfr3d_menu);
+#ifdef FR3D_CSV_TELEMETRY
+    if (fr3d_diam_src == 2)
+      MENU_ITEM(submenu, "Source Manual", lcd_diam_src_menu);
+    else if (fr3d_diam_src == 1)
+      MENU_ITEM(submenu, "Source USB", lcd_diam_src_menu);
+    else
+      MENU_ITEM(submenu, "Source A3", lcd_diam_src_menu);
+    if (fr3d_diam_src == 2) {
+      lcd_diam_manual_edit = fr3d_diam_host_get();
+      MENU_ITEM_EDIT_CALLBACK(float32, "D mm", &lcd_diam_manual_edit, 1.50, 2.00, lcd_diam_manual_store);
+      MENU_ITEM(function, "Hall cal host off", lcd_hall_now_info);
+    } else if (fr3d_diam_src == 1) {
+      MENU_ITEM(function, "Hall cal USB off", lcd_hall_now_info);
+    } else
+#endif
+    {
     MENU_ITEM(submenu, "Pattern Diameter", lcd_hall_pattern_menu);
     if (fr3d_hall_cal_valid == 0)
       MENU_ITEM(function, "Need Calibrate!", lcd_hall_open_calibrate_menu);
     else
       MENU_ITEM(submenu, "CALIBRATE", lcd_hall_calibrate_menu);
     MENU_ITEM(function, "Offset", lcd_hall_offset_open_editor);
+    }
     END_MENU();
 }
 
@@ -1336,6 +1420,11 @@ static void lcd_pred_apply_auto_on()
 {
     fr3d_pred_mode = lcd_pred_auto_on ? 1 : 0;
     lcd_pred_store_settings();
+}
+
+static void lcd_pred_apply_opt_on()
+{
+    fr3d_pred_optimize = lcd_pred_opt_on ? 1 : 0;
 }
 
 static void lcd_pred_sync_ui_edits()
@@ -1484,9 +1573,11 @@ static void lcd_addonfr3d_predictor_menu()
         lcd_pred_store_settings();
     }
     lcd_pred_sync_ui_edits();
+    lcd_pred_opt_on = (fr3d_pred_optimize != 0);
     START_MENU();
     MENU_ITEM(back, MSG_PREPARE, lcd_settings_menu_back);
 
+    MENU_ITEM_EDIT_CALLBACK(bool, "Optimizar", &lcd_pred_opt_on, lcd_pred_apply_opt_on);
     MENU_ITEM_EDIT_CALLBACK(float32, "Emin", &fr3d_pred_r_min, 0.0, EXTRUDER_RPM_MAX, lcd_pred_store_settings);
     MENU_ITEM_EDIT_CALLBACK(float32, "Emax", &fr3d_pred_r_max, 0.0, EXTRUDER_RPM_MAX, lcd_pred_store_settings);
     MENU_ITEM_EDIT_CALLBACK(int3, "Tmin", &lcd_pred_t_min_edit, 0, 300, lcd_pred_apply_t_min);

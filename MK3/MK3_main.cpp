@@ -1804,6 +1804,9 @@ static void fr3d_compact_do_es(void)
   digitalWrite(CONTROLLERFAN_PIN, 0);
 #endif
   extrude_status = extrude_status & ES_STATS_CLEAR;
+#ifdef FR3D_CSV_TELEMETRY
+  fr3d_pred_on_extrude_stop();
+#endif
 #endif
 }
 
@@ -1857,6 +1860,10 @@ static void fr3d_compact_do_cooldown(void)
 float fr3d_hall_adc_read_now()
 {
 #if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
+#ifdef FR3D_CSV_TELEMETRY
+  if (fr3d_diam_src != 0)
+    return 0.0f;
+#endif
   /* El Hall se muestrea en TIMER0_COMPB (temperature.cpp): leer aquí sin tocar ADMUX ni cli()
      largo, porque bloquear TIMER0 cortaba el soft-PWM del hotend y no llegaba a temperatura. */
   uint16_t v;
@@ -1868,6 +1875,19 @@ float fr3d_hall_adc_read_now()
   return 0.0f;
 #endif
 }
+
+#ifdef FR3D_CSV_TELEMETRY
+static bool fr3d_reject_hall_if_usb(void)
+{
+  if (fr3d_diam_src == 0) return false;
+  fr3d_compact_last_error = true;
+  SERIAL_ECHO_START;
+  SERIAL_ECHOLNPGM("err HALL src host");
+  return true;
+}
+#else
+static bool fr3d_reject_hall_if_usb(void) { return false; }
+#endif
 
 static bool process_fr3d_compact_line()
 {
@@ -1946,11 +1966,17 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" DIAMQ solo DLCD (diametro LCD campo D)");
     SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" DIAMSRC<0|1|2> 0=A3 1=USB 2=MANUAL (EEPROM)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" DIAMSET<mm> diametro HOST (stale 5s)");
+    SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" PREDQ estado predictor (enable/mode/parametros)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" PREDEN<0|1> predictor OFF/ON");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" PREDMODE<0|1> 0=manual 1=automatico");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" PREDOPT<0|1> optimizar P sesion (RAM, default 0)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" PREDTGT/PREDDB/PREDTM/PREDTRNG/PREDRRNG/PREDDTRNG tunning");
     SERIAL_ECHO_START;
@@ -2044,7 +2070,17 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START; SERIAL_ECHOPGM("SWmid,"); SERIAL_ECHO(filament_width_desired); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("SWmax,"); SERIAL_ECHO(sensorRunoutMax); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("DH,"); SERIAL_ECHO((int)fr3d_hall_diameter_enabled); SERIAL_ECHOLNPGM(",");
-    SERIAL_ECHO_START; SERIAL_ECHOPGM("A3,"); SERIAL_ECHO(fr3d_hall_adc_read_now()); SERIAL_ECHOLNPGM(",");
+#ifdef FR3D_CSV_TELEMETRY
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMSRC,"); SERIAL_ECHO((int)fr3d_diam_src); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("HOSTOK,"); SERIAL_ECHO((int)fr3d_diam_host_fresh()); SERIAL_ECHOLNPGM(",");
+#endif
+#ifdef FR3D_CSV_TELEMETRY
+    if (fr3d_diam_src != 0) {
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("A3,off,");
+      SERIAL_ECHO_START; SERIAL_ECHOPGM("HOSTD,"); SERIAL_PROTOCOL_F(fr3d_diam_host_get(), 3); SERIAL_ECHOLNPGM(",");
+    } else
+#endif
+    { SERIAL_ECHO_START; SERIAL_ECHOPGM("A3,"); SERIAL_ECHO(fr3d_hall_adc_read_now()); SERIAL_ECHOLNPGM(","); }
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PAT,"); SERIAL_ECHO((fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? 'B' : 'A'); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("CALV,"); SERIAL_ECHO((int)fr3d_hall_cal_valid); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("D170,"); SERIAL_ECHO(fr3d_hall_cal_adc_170); SERIAL_ECHOLNPGM(",");
@@ -2057,6 +2093,7 @@ static bool process_fr3d_compact_line()
 #endif
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDEN,"); SERIAL_ECHO((int)fr3d_pred_enabled); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMODE,"); SERIAL_ECHO((int)fr3d_pred_mode); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDOPT,"); SERIAL_ECHO((int)fr3d_pred_optimize); SERIAL_ECHOLNPGM(",");
 #ifdef FR3D_CSV_TELEMETRY
     fr3d_pred_ui_print_token();
 #endif
@@ -2363,6 +2400,49 @@ static bool process_fr3d_compact_line()
     return true;
   }
 
+  if (fr3d_cmd_prefix(p, "DIAMSRC")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 7, &lv) || (lv != 0 && lv != 1 && lv != 2)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DIAMSRC");
+      return true;
+    }
+#ifdef FR3D_CSV_TELEMETRY
+    fr3d_diam_src_set((uint8_t)lv);
+#ifdef EEPROM_SETTINGS
+    Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok DIAMSRC "); SERIAL_ECHOLN((int)fr3d_diam_src);
+#else
+    SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err DIAMSRC no csv");
+#endif
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "DIAMSET")) {
+    float vf = 0.0f;
+    if (!fr3d_parse_tail_float(p, 7, &vf)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DIAMSET");
+      return true;
+    }
+#ifdef FR3D_CSV_TELEMETRY
+    if (fr3d_diam_src == 0) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err DIAMSET src A3");
+      return true;
+    }
+    fr3d_diam_host_set(vf);
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok DIAMSET "); SERIAL_PROTOCOL_F(vf, 3); SERIAL_ECHOLN("");
+#else
+    SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err DIAMSET no csv");
+#endif
+    return true;
+  }
+
   if (fr3d_cmd_word(p, "DIAMQ")) {
     char *r = p + 5;
     while (*r == ' ' || *r == '\t') r++;
@@ -2393,6 +2473,7 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START; SERIAL_ECHOLNPGM("ok PREDQ");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDEN,"); SERIAL_ECHO((int)fr3d_pred_enabled); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMODE,"); SERIAL_ECHO((int)fr3d_pred_mode); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDOPT,"); SERIAL_ECHO((int)fr3d_pred_optimize); SERIAL_ECHOLNPGM(",");
 #ifdef FR3D_CSV_TELEMETRY
     fr3d_pred_ui_print_token();
 #endif
@@ -2443,6 +2524,18 @@ static bool process_fr3d_compact_line()
     }
     fr3d_pred_mode = (uint8_t)lv;
     SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDMODE "); SERIAL_ECHOLN((int)fr3d_pred_mode);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDOPT")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 7, &lv) || (lv != 0 && lv != 1)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDOPT");
+      return true;
+    }
+    fr3d_pred_optimize = (uint8_t)lv;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDOPT "); SERIAL_ECHOLN((int)fr3d_pred_optimize);
     return true;
   }
 
@@ -2780,6 +2873,7 @@ static bool process_fr3d_compact_line()
   }
 
   if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '0') {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
     while (*q == ' ' || *q == '\t') q++;
     if (*q == '\0') {
@@ -2817,6 +2911,7 @@ static bool process_fr3d_compact_line()
   }
 
   if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '5') {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
     while (*q == ' ' || *q == '\t') q++;
     if (*q == '\0') {
@@ -2854,6 +2949,7 @@ static bool process_fr3d_compact_line()
   }
 
   if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '8' && fr3d_uc(p[3]) == '0') {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
     while (*q == ' ' || *q == '\t') q++;
     if (*q == '\0') {
@@ -2891,6 +2987,7 @@ static bool process_fr3d_compact_line()
   }
 
   if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == 'O' && fr3d_uc(p[2]) == 'F' && fr3d_uc(p[3]) == 'F') {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
     while (*q == ' ' || *q == '\t') q++;
     if (*q == '\0') {
@@ -2928,6 +3025,7 @@ static bool process_fr3d_compact_line()
   }
 
   if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '0') {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
     while (*q == ' ' || *q == '\t') q++;
     if (*q != '\0') {
@@ -2948,6 +3046,7 @@ static bool process_fr3d_compact_line()
   }
 
   if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '5') {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
     while (*q == ' ' || *q == '\t') q++;
     if (*q != '\0') {
@@ -2968,6 +3067,7 @@ static bool process_fr3d_compact_line()
   }
 
   if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '8' && fr3d_uc(p[3]) == '0') {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
     while (*q == ' ' || *q == '\t') q++;
     if (*q != '\0') {
@@ -2988,6 +3088,7 @@ static bool process_fr3d_compact_line()
   }
 
   if (fr3d_cmd_prefix(p, "HPAT")) {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
     while (*q == ' ' || *q == '\t') q++;
     char ch = fr3d_uc(*q);
@@ -3011,6 +3112,7 @@ static bool process_fr3d_compact_line()
 
   /* CALV1 — reactivar flag si hay 3 ADC guardados (tras flash / CALV perdido). */
   if (fr3d_cmd_word(p, "CALV1")) {
+    if (fr3d_reject_hall_if_usb()) return true;
     char *r = p + 5;
     while (*r == ' ' || *r == '\t') r++;
     if (*r != '\0') {

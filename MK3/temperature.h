@@ -72,6 +72,7 @@ extern float current_filwidth;
    */
   uint8_t fr3d_hall_activate_saved_cal(void);
   extern uint8_t fr3d_pred_enabled, fr3d_pred_mode;
+  extern uint8_t fr3d_pred_optimize; /* RAM sesión: 0=off 1=on; no EEPROM */
   extern uint8_t fr3d_pred_window_size, fr3d_pred_delta_t_max, fr3d_pred_t_switch_margin, fr3d_pred_t_settle_fusions;
   extern float fr3d_pred_hold_m;
   extern uint16_t fr3d_pred_hold_timeout_s;

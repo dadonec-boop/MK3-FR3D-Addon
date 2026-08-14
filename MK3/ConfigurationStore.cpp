@@ -3,6 +3,7 @@
 #include "temperature.h"
 #include "ultralcd.h"
 #include "ConfigurationStore.h"
+#include "fr3d_telemetry.h"
 
 #ifndef DELTA
 /* Snapshot solo temperatura E0 (no forma parte del bloque V19; slot fijo en EEPROM). */
@@ -217,6 +218,9 @@ void Config_StoreSettings()
   fr3d_serial_filter_msgs = true; /* Always ON; not user-visible */
   EEPROM_WRITE_VAR(i,fr3d_serial_filter_msgs);
   #endif
+#endif
+#ifdef FR3D_CSV_TELEMETRY
+  EEPROM_WRITE_VAR(i, fr3d_diam_src);
 #endif
 #ifndef DELTA
   hotend_standalone_write(target_temperature[0]);
@@ -503,6 +507,13 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         EEPROM_READ_VAR(i, fr3d_serial_filter_msgs);
         fr3d_serial_filter_msgs = true; /* Always ON; not user-visible */
         #endif
+#ifdef FR3D_CSV_TELEMETRY
+        {
+          uint8_t src = 0;
+          EEPROM_READ_VAR(i, src);
+          fr3d_diam_src = (src == 1 || src == 2) ? src : 0;
+        }
+#endif
         if (fr3d_hall_diameter_enabled > 1)
           fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
         /* DH siempre ON (EEPROM puede traer 0 de FW viejo). */
@@ -1236,6 +1247,9 @@ void Config_ResetDefault()
  fr3d_diam_pending_match_mm = FR3D_DIAM_PENDING_MATCH_MM_DEFAULT;
  fr3d_diam_debug_csv_enabled = (uint8_t)FR3D_DIAM_DEBUG_DEFAULT;
  fr3d_csv_cycle_s = (uint8_t)FR3D_CSV_CYCLE_S_DEFAULT;
+#ifdef FR3D_CSV_TELEMETRY
+ fr3d_diam_src = 0;
+#endif
  sinfin_compression_mode = DEFAULT_SINFIN_COMPRESSION;
 #ifdef FR3D_SERIAL_HOST_DISABLE_GM
  fr3d_serial_filter_msgs = DEFAULT_FR3D_SERIAL_FILTER_MSGS_ON;

@@ -502,7 +502,7 @@ static void lcd_implementation_status_screen()
       if (d_lcd_x1000 > 9999U) d_lcd_x1000 = 9999U;
       if (d_prom_x1000 > 9999U) d_prom_x1000 = 9999U;
 
-      // A / AH / AB / AE± / AT± = Auto; - = SIN A (Auto OFF o PREDEN=0)
+      // A / AH / AB / AP / AU / AZ / AE± / AT± = Auto; - = SIN A (Auto OFF o PREDEN=0)
       const bool auto_on = fr3d_pred_mode && fr3d_pred_enabled;
       char mode_c = auto_on ? 'A' : '-';
       char tok0 = ' ';
@@ -510,7 +510,8 @@ static void lcd_implementation_status_screen()
       if (auto_on) {
         char adj0 = fr3d_pred_ui_adjust_char_0;
         char sign_c = fr3d_pred_ui_sign_char;
-        if (adj0 == 'H' || adj0 == 'B' || adj0 == 'S' || adj0 == 'C' || adj0 == 'G' || adj0 == 'N' || adj0 == 'O') {
+        if (adj0 == 'H' || adj0 == 'B' || adj0 == 'S' || adj0 == 'C' || adj0 == 'G' || adj0 == 'N' || adj0 == 'O' ||
+            adj0 == 'P' || adj0 == 'U' || adj0 == 'Z') {
           tok0 = adj0;
           tok1 = ' ';
         } else if ((adj0 == 'E' || adj0 == 'T') && (sign_c == '+' || sign_c == '-')) {

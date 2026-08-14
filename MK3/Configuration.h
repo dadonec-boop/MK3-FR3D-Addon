@@ -390,6 +390,18 @@ debug notes:
 #define FR3D_PRED_HOLD_M_DEFAULT 0.50f
 /* Timeout del hold de transporte si L_m se resetea o tiraje muy lento. */
 #define FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT 60
+/* Predictor v2: salud E→P y optimizar P (sesión RAM). */
+#define FR3D_PRED_EP_DE_SIG 0.30f
+#define FR3D_PRED_EP_DP_FLAT 1.5f
+#define FR3D_PRED_EP_WINDOW_MS 10000UL
+#define FR3D_PRED_REGIME_MS 40000UL
+#define FR3D_PRED_OPT_FREEZE_MS 90000UL
+#define FR3D_PRED_P_BAND 5.0f
+#define FR3D_PRED_P_ABS_MIN 5.0f
+#define FR3D_PRED_P_ABS_MAX 45.0f
+#define FR3D_PRED_F_MIN_PCT 30
+#define FR3D_PRED_F_MAX_PCT 100
+#define FR3D_PRED_OPT_ABORT_DIAM_STREAK 2
 /* Periodo interno fijo de fusión predictor/LCD (USB CSV es on-demand CSVQ). */
 #define FR3D_CSV_CYCLE_S_DEFAULT 2
 #define FR3D_CSV_CYCLE_S_MIN 2

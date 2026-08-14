@@ -19,14 +19,23 @@ extern char fr3d_pred_ui_last_axis_char;
 extern char fr3d_pred_ui_last_sign_char;
 extern uint8_t fr3d_pred_ui_last_value_valid;
 extern float fr3d_pred_ui_last_value;
-/** Imprime echo:PREDUI,<token>, (SIN A | A | AH | AB | AE± | AT±). */
+/** Imprime echo:PREDUI,<token>, (SIN A | A | AH | AB | AP | AU | AZ | AE± | AT±). */
 void fr3d_pred_ui_print_token(void);
+/** STOP/pausa: Optimizar OFF y limpia ventana E→P / freeze. */
+void fr3d_pred_on_extrude_stop(void);
+/** 0=Hall A3, 1=USB HOST, 2=MANUAL LCD/host (EEPROM). Una sola fuente. */
+extern uint8_t fr3d_diam_src;
+uint8_t fr3d_diam_host_fresh(void);
+float fr3d_diam_host_get(void);
+void fr3d_diam_host_set(float mm);
+void fr3d_diam_src_set(uint8_t src);
 #else
 #define fr3d_csv_telemetry_poll() ((void)0)
 #define fr3d_csv_sync_sample_timer() ((void)0)
 #define fr3d_csv_request_usb_row() ((void)0)
 #define fr3d_diam_poll_samples() ((void)0)
 #define fr3d_pred_ui_print_token() ((void)0)
+#define fr3d_pred_on_extrude_stop() ((void)0)
 #endif
 
 #endif
