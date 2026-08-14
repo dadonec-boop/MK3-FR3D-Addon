@@ -23,7 +23,7 @@ You can use this firmware in two ways:
 | [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.6) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
 | [Windows gateway (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/latest) | Optional Windows PC gateway package (`FR3DGateway-windows-x64.zip` — **exe binary only**) |
 =======
-| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.7) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
+| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
 >>>>>>> Stashed changes
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
@@ -112,8 +112,8 @@ Download the factory image from the Release:
 - **[fr3daddon-v0.6-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.6/fr3daddon-v0.6-small.img.zst)**  
   Release notes: [pi-gateway-v0.6](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.6)
 =======
-- **[fr3daddon-v0.7-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.7/fr3daddon-v0.7-small.img.zst)**  
-  Release notes: [pi-gateway-v0.7](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.7)
+- **[fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)**  
+  Release notes: [pi-gateway-v0.8](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8)
 >>>>>>> Stashed changes
 
 ### Flash with Raspberry Pi Imager
@@ -123,7 +123,7 @@ Download the factory image from the Release:
 <<<<<<< Updated upstream
 3. Open Imager → **Choose OS** → **Use custom** → select `fr3daddon-v0.6-small.img.zst`.
 =======
-3. Open Imager → **Choose OS** → **Use custom** → select `fr3daddon-v0.7-small.img.zst`.
+3. Open Imager → **Choose OS** → **Use custom** → select `fr3daddon-v0.8-small.img.zst`.
 >>>>>>> Stashed changes
 4. **Choose storage** → your SD card → **Write**.
 5. Insert the SD into the Pi Zero 2 W and power on.
@@ -163,7 +163,7 @@ Download the factory image from the Release:
 <<<<<<< Updated upstream
 - Pi gateway image: [fr3daddon-v0.6-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.6/fr3daddon-v0.6-small.img.zst)
 =======
-- Pi gateway image: [fr3daddon-v0.7-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.7/fr3daddon-v0.7-small.img.zst)
+- Pi gateway image: [fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)
 >>>>>>> Stashed changes
 - System / web app reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
 - Source: [github.com/dadonec-boop/MK3-FR3D-Addon](https://github.com/dadonec-boop/MK3-FR3D-Addon)

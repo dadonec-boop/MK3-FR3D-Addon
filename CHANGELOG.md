@@ -29,6 +29,14 @@ History of meaningful firmware changes relative to the original Desktop Filament
 - QUERY reports real `DH`; `CALV1` reactivates saved cal and enables Hall
 - `dist/MK3-FR3D-Addon.zip` refreshed (4 Aug 2026)
 
+## [pi-gateway-v0.8] — 2026-08-13
+
+### Pi Zero 2 W factory image (Release asset)
+
+- Published [`fr3daddon-v0.8-small.img.zst`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)
+- Includes gateway **2.4.1**: LAN Flutter UI (nginx), BDWidth USB path, DIAMSRC sensor modes support
+- Release notes: [`pi-gateway-v0.8`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8)
+
 ## [pi-gateway-v0.7] — 2026-08-04
 
 ### Pi Zero 2 W factory image (Release asset)
