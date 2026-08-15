@@ -2,6 +2,15 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [gateway-v2.4.10] — 2026-08-15
+
+### Gateway program (Pi OTA + Windows)
+
+- Release tag [`gateway-v2.4.10`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/gateway-v2.4.10): Pi OTA zip, Windows x64 zip, MK3 firmware zip
+- Older MK3 firmware stays usable: Analog A3, extrusion, winder and predictor Auto
+- USB/Manual, Optimizar and P* only if MK3 QUERY reports `DIAMSRC` / `PREDOPT` / `PREDPSTAR`
+- Update Pi with CONSOLE `PI UPDATE GATEWAY latest` (does not replace the SD factory image)
+
 ## [gateway-v2.4.9] — 2026-08-15
 
 ### Gateway program (Pi OTA + Windows)

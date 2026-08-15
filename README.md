@@ -107,7 +107,7 @@ Download the factory image from the Release:
 - **[fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)**  
   Release notes: [pi-gateway-v0.8](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8)
 
-After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY latest` (currently **2.4.9**). That does **not** replace the SD image.
+After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY latest` (currently **2.4.10**). That does **not** replace the SD image.
 
 ### Flash with Raspberry Pi Imager
 
