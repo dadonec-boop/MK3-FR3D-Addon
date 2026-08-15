@@ -7,7 +7,7 @@ Based on **MACKEREL** (Marlin-derived filament extruder firmware by Filip Mulier
 You can use this firmware in two ways:
 
 1. **Standalone** — MK3S+ with FR3D Addon from the machine LCD (no Raspberry Pi gateway / web app required)
-2. **Internet control** — optional Raspberry Pi Zero 2 W **or** Windows PC gateway + web app ([fr3d-addon.web.app](http://fr3d-addon.web.app/))
+2. **Internet and/or LAN** — optional Raspberry Pi Zero 2 W **or** Windows PC gateway + the same web app, over the internet or on local WiFi (with or without internet) ([fr3d-addon.web.app](http://fr3d-addon.web.app/))
 
 ---
 
@@ -19,12 +19,8 @@ You can use this firmware in two ways:
 | [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip) | Ready-to-download ZIP of `MK3/` for Arduino IDE |
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
 | [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/) | Printable Hall-effect (INFIDEL-style) diameter-sensor parts (STL) |
-<<<<<<< Updated upstream
-| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.6) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
-| [Windows gateway (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/latest) | Optional Windows PC gateway package (`FR3DGateway-windows-x64.zip` — **exe binary only**) |
-=======
 | [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
->>>>>>> Stashed changes
+| [Windows gateway (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/latest) | Optional Windows PC gateway package (`FR3DGateway-windows-x64.zip` — **exe binary only**) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
 
@@ -42,7 +38,7 @@ This repository publishes **MK3 board firmware** (GPL-3.0) and, via **GitHub Rel
 Compared with original MK3, this firmware includes:
 
 - Diameter measurement (Hall / optical) with LCD **Pattern Diameter** presets and calibration helpers
-- Diameter **predictor** with **Auto On / Off** (automatic E/T apply vs suggest-only)
+- Diameter **predictor** with **Auto On / Off** (automatic E/T apply vs suggest-only); **Optimizar** sets P* by acting on E+T while puller stays in Auto
 - Predictor parameter menus (basic + Advanced)
 - Host serial temperature setpoint (`T` / `RTFP`) capped dynamically at **max(190 °C, predictor Tmax + 5)**, with heater safety headroom (see CHANGELOG)
 - Compact USB host commands and CSV telemetry (on-demand `CSVQ`; internal fusion 2 s)
@@ -88,15 +84,15 @@ Clone or browse this repository and open `MK3/MK3.ino` directly — same result 
 
 ---
 
-## Internet control (MK3s + FR3D Addon)
+## Internet and/or LAN control (MK3s + FR3D Addon)
 
 This is an **optional** path. Standalone LCD operation above does **not** require a Pi or the web app.
 
-This firmware is **prepared** for remote control when used with the **MK3s + FR3D Addon** product stack:
+This firmware is **prepared** for remote and local control when used with the **MK3s + FR3D Addon** product stack:
 
-- A **Raspberry Pi Zero 2 W** acts as a gateway between the MK3 (USB/serial) and the Internet
-- A **web application** is used to configure and control the machine
-- Operational reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
+- A **Raspberry Pi Zero 2 W** (or a Windows PC) acts as a gateway between the MK3 (USB/serial) and the network
+- The **same web app** can run over the **internet** or on the **local LAN / WiFi**, with or without an internet connection
+- Operational reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/) (cloud) or `http://<Pi-IP>/` on the same WiFi (LAN)
 
 The web app / host stack is an **additional product feature** and is **not** published here as open-source.
 
@@ -108,23 +104,16 @@ A **prebuilt SD image** for the Pi Zero 2 W gateway is available for download un
 
 Download the factory image from the Release:
 
-<<<<<<< Updated upstream
-- **[fr3daddon-v0.6-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.6/fr3daddon-v0.6-small.img.zst)**  
-  Release notes: [pi-gateway-v0.6](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.6)
-=======
 - **[fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)**  
   Release notes: [pi-gateway-v0.8](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8)
->>>>>>> Stashed changes
+
+After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY latest` (currently **2.4.9**). That does **not** replace the SD image.
 
 ### Flash with Raspberry Pi Imager
 
 1. Download [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 2. Insert a micro SD card (**32 GB** or larger recommended).
-<<<<<<< Updated upstream
-3. Open Imager → **Choose OS** → **Use custom** → select `fr3daddon-v0.6-small.img.zst`.
-=======
 3. Open Imager → **Choose OS** → **Use custom** → select `fr3daddon-v0.8-small.img.zst`.
->>>>>>> Stashed changes
 4. **Choose storage** → your SD card → **Write**.
 5. Insert the SD into the Pi Zero 2 W and power on.
 
@@ -160,10 +149,7 @@ Download the factory image from the Release:
 
 - Firmware ZIP (Arduino IDE): [dist/MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)
 - Standalone user guide (PDF): [docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
-<<<<<<< Updated upstream
-- Pi gateway image: [fr3daddon-v0.6-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.6/fr3daddon-v0.6-small.img.zst)
-=======
 - Pi gateway image: [fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)
->>>>>>> Stashed changes
+- Gateway program (Pi OTA + Windows): [latest Release](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/latest)
 - System / web app reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
 - Source: [github.com/dadonec-boop/MK3-FR3D-Addon](https://github.com/dadonec-boop/MK3-FR3D-Addon)

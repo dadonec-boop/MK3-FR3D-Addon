@@ -390,15 +390,24 @@ debug notes:
 #define FR3D_PRED_HOLD_M_DEFAULT 0.50f
 /* Timeout del hold de transporte si L_m se resetea o tiraje muy lento. */
 #define FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT 60
-/* Predictor v2: salud E→P y optimizar P (sesión RAM). */
-#define FR3D_PRED_EP_DE_SIG 0.30f
-#define FR3D_PRED_EP_DP_FLAT 1.5f
-#define FR3D_PRED_EP_WINDOW_MS 10000UL
+/* Predictor v2: salud E→P (acumulado, no por ventana de 10 s).
+ * |ΔE|≥2 rpm (sube o baja) y P no sigue (|ΔP|<2) durante ≥90 s → zona problema.
+ * 90 s cubre el transporte boquilla→sensor (~0.5 m) y evita falsos patinajes. */
+#define FR3D_PRED_EP_DE_SIG 2.0f
+#define FR3D_PRED_EP_DP_FLAT 2.0f
+#define FR3D_PRED_EP_PERSIST_MS 90000UL
 #define FR3D_PRED_REGIME_MS 40000UL
 #define FR3D_PRED_OPT_FREEZE_MS 90000UL
+#define FR3D_PRED_OPT_DWELL_MS 90000UL
+#define FR3D_PRED_EP_CORRECT_E 0.50f
 #define FR3D_PRED_P_BAND 5.0f
 #define FR3D_PRED_P_ABS_MIN 5.0f
 #define FR3D_PRED_P_ABS_MAX 45.0f
+/* Optimizar eficiencia: P* = objetivo de P observado (PAUT). Actúa E+T; nunca fija P ni sale de Auto. */
+#define FR3D_PRED_OPT_E_STEP 0.25f
+#define FR3D_PRED_P_STAR_EPS 1.0f
+/* Holgura Ø al optimizar: puede pasarse un poco de la banda muerta sin abortar. */
+#define FR3D_PRED_OPT_BAND_SLACK_MM 0.020f
 #define FR3D_PRED_F_MIN_PCT 30
 #define FR3D_PRED_F_MAX_PCT 100
 #define FR3D_PRED_OPT_ABORT_DIAM_STREAK 2

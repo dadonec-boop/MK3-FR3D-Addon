@@ -2094,6 +2094,8 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDEN,"); SERIAL_ECHO((int)fr3d_pred_enabled); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMODE,"); SERIAL_ECHO((int)fr3d_pred_mode); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDOPT,"); SERIAL_ECHO((int)fr3d_pred_optimize); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDPSTAR,"); SERIAL_PROTOCOL_F(fr3d_pred_p_star, 2); SERIAL_ECHOPGM(",");
+    SERIAL_ECHO((int)fr3d_pred_p_star_valid); SERIAL_ECHOLNPGM(",");
 #ifdef FR3D_CSV_TELEMETRY
     fr3d_pred_ui_print_token();
 #endif
@@ -2409,10 +2411,15 @@ static bool process_fr3d_compact_line()
       return true;
     }
 #ifdef FR3D_CSV_TELEMETRY
-    fr3d_diam_src_set((uint8_t)lv);
+    {
+      const uint8_t prev_src = fr3d_diam_src;
+      fr3d_diam_src_set((uint8_t)lv);
+      /* EEPROM solo si cambió: DIAMSRC repetido desde la Pi congelaba el Mega (~10 s). */
 #ifdef EEPROM_SETTINGS
-    Config_StoreSettings();
+      if (prev_src != fr3d_diam_src)
+        Config_StoreSettings();
 #endif
+    }
     SERIAL_ECHO_START; SERIAL_ECHOPGM("ok DIAMSRC "); SERIAL_ECHOLN((int)fr3d_diam_src);
 #else
     SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err DIAMSRC no csv");
@@ -2474,6 +2481,8 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDEN,"); SERIAL_ECHO((int)fr3d_pred_enabled); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDMODE,"); SERIAL_ECHO((int)fr3d_pred_mode); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDOPT,"); SERIAL_ECHO((int)fr3d_pred_optimize); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PREDPSTAR,"); SERIAL_PROTOCOL_F(fr3d_pred_p_star, 2); SERIAL_ECHOPGM(",");
+    SERIAL_ECHO((int)fr3d_pred_p_star_valid); SERIAL_ECHOLNPGM(",");
 #ifdef FR3D_CSV_TELEMETRY
     fr3d_pred_ui_print_token();
 #endif
@@ -2536,6 +2545,30 @@ static bool process_fr3d_compact_line()
     }
     fr3d_pred_optimize = (uint8_t)lv;
     SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDOPT "); SERIAL_ECHOLN((int)fr3d_pred_optimize);
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "PREDPSTAR")) {
+    float vf = 0.0f;
+    if (!fr3d_parse_tail_float(p, 9, &vf)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("err PREDPSTAR");
+      return true;
+    }
+    /* 0 = sin objetivo: no buscar eficiencia. */
+    if (vf <= 0.05f) {
+      fr3d_pred_p_star = 0.0f;
+      fr3d_pred_p_star_valid = 0;
+      SERIAL_ECHO_START; SERIAL_ECHOLNPGM("ok PREDPSTAR 0");
+      return true;
+    }
+    if (vf < FR3D_PRED_P_ABS_MIN) vf = FR3D_PRED_P_ABS_MIN;
+    if (vf > FR3D_PRED_P_ABS_MAX) vf = FR3D_PRED_P_ABS_MAX;
+    if (vf < PULLER_RPM_MIN) vf = PULLER_RPM_MIN;
+    if (vf > PULLER_RPM_MAX) vf = PULLER_RPM_MAX;
+    fr3d_pred_p_star = vf;
+    fr3d_pred_p_star_valid = 1;
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("ok PREDPSTAR "); SERIAL_PROTOCOL_F(fr3d_pred_p_star, 2); SERIAL_ECHOLNPGM("");
     return true;
   }
 

@@ -34,6 +34,9 @@ uint8_t fr3d_diam_src = 0; /* 0=A3 1=USB 2=MANUAL */
 static float fr3d_host_diam_mm = 1.75f;
 static unsigned long fr3d_host_diam_ms = 0;
 
+static void fr3d_diam_window_reset(float seed_value, unsigned long now);
+static uint8_t fr3d_diam_for_pred(float *d_mean, float *d_span);
+
 uint8_t fr3d_diam_host_fresh(void)
 {
   if (fr3d_diam_src == 2) return 1; /* Manual: Ø local, no caduca */
@@ -51,18 +54,31 @@ void fr3d_diam_host_set(float mm)
 {
   if (mm < 1.50f) mm = 1.50f;
   if (mm > 2.20f) mm = 2.20f;
+  const float prev = fr3d_host_diam_mm;
   fr3d_host_diam_mm = mm;
   fr3d_host_diam_ms = millis();
+  /* Manual: el Ø es el calibre del operador. Vaciar FIFO Hall/USB viejo. */
+  if (fr3d_diam_src == 2) {
+    float d = mm - prev;
+    if (d < 0.0f) d = -d;
+    if (d >= 0.0005f)
+      fr3d_diam_window_reset(mm, millis());
+  }
 }
 
 void fr3d_diam_src_set(uint8_t src)
 {
   if (src > 2) src = 0;
+  const uint8_t prev = fr3d_diam_src;
   fr3d_diam_src = src;
   if (fr3d_diam_src == 0)
     fr3d_host_diam_ms = 0UL;
   else if (fr3d_diam_src == 2 && fr3d_host_diam_ms == 0UL)
     fr3d_host_diam_ms = millis();
+  if (prev != fr3d_diam_src) {
+    const float seed = (fr3d_diam_src == 0) ? 1.75f : fr3d_host_diam_mm;
+    fr3d_diam_window_reset(seed, millis());
+  }
 }
 
 #define FR3D_DIAM_SAMPLE_MS 500UL
@@ -135,14 +151,25 @@ static uint8_t fr3d_pred_margin_corner_streak = 0;
 static uint8_t fr3d_pred_ep_inited = 0;
 static float fr3d_pred_ep_e0 = 0.0f;
 static float fr3d_pred_ep_p0 = 0.0f;
-static unsigned long fr3d_pred_ep_t0 = 0;
 static uint8_t fr3d_pred_ep_dead = 0;
 static uint8_t fr3d_pred_ep_e_up = 0;
+static unsigned long fr3d_pred_ep_dead_since_ms = 0;
 static unsigned long fr3d_pred_opt_freeze_until_ms = 0;
 static uint8_t fr3d_pred_p_ref_inited = 0;
 static float fr3d_pred_p_ref = 0.0f;
 static uint8_t fr3d_pred_opt_diam_out_streak = 0;
 static uint8_t fr3d_pred_opt_acted_last = 0;
+static unsigned long fr3d_pred_in_band_since_ms = 0;
+
+static void fr3d_pred_ep_reset(float e, float p)
+{
+  fr3d_pred_ep_e0 = e;
+  fr3d_pred_ep_p0 = p;
+  fr3d_pred_ep_inited = 1;
+  fr3d_pred_ep_dead = 0;
+  fr3d_pred_ep_e_up = 0;
+  fr3d_pred_ep_dead_since_ms = 0;
+}
 
 void fr3d_pred_on_extrude_stop(void)
 {
@@ -150,10 +177,18 @@ void fr3d_pred_on_extrude_stop(void)
   fr3d_pred_ep_inited = 0;
   fr3d_pred_ep_dead = 0;
   fr3d_pred_ep_e_up = 0;
+  fr3d_pred_ep_dead_since_ms = 0;
   fr3d_pred_opt_freeze_until_ms = 0;
   fr3d_pred_p_ref_inited = 0;
   fr3d_pred_opt_diam_out_streak = 0;
   fr3d_pred_opt_acted_last = 0;
+  fr3d_pred_in_band_since_ms = 0;
+  fr3d_pred_transport_hold_active = 0;
+}
+
+static void fr3d_pred_apply_e(float next_e)
+{
+  extruder_rpm_set = constrain(next_e, EXTRUDER_RPM_MIN, EXTRUDER_RPM_MAX);
 }
 
 static float fr3d_pred_pull_rpm(void)
@@ -194,6 +229,40 @@ static void fr3d_pred_mark_transport_hold(void)
   fr3d_pred_transport_hold_active = 1;
   fr3d_pred_transport_l_ref_mm = extrude_length;
   fr3d_pred_transport_hold_start_ms = millis();
+}
+
+/* Libera el hold si ya pasó ΔL o el timeout. 1 = seguir esperando. */
+static uint8_t fr3d_pred_transport_hold_tick(char *detail, size_t detail_sz)
+{
+  if (!fr3d_pred_transport_hold_active) return 0;
+  const float hold_m = max(0.0f, fr3d_pred_hold_m);
+  const uint16_t hold_to_s = fr3d_pred_hold_timeout_s;
+  const unsigned long now_ms = millis();
+  const unsigned long elapsed_ms = now_ms - fr3d_pred_transport_hold_start_ms;
+  const bool timed_out = (hold_to_s > 0) && (elapsed_ms >= (unsigned long)hold_to_s * 1000UL);
+  float delta_m = 0.0f;
+  bool length_reset = false;
+  if (extrude_length + 0.5f < fr3d_pred_transport_l_ref_mm) {
+    length_reset = true;
+  } else {
+    delta_m = (extrude_length - fr3d_pred_transport_l_ref_mm) / 1000.0f;
+  }
+  const bool meters_ok = (hold_m <= 0.0001f) || (delta_m + 0.0001f >= hold_m);
+  if (length_reset || timed_out || meters_ok) {
+    fr3d_pred_transport_hold_active = 0;
+    return 0;
+  }
+  if (detail != NULL && detail_sz > 0) {
+    snprintf(
+        detail,
+        detail_sz,
+        "Hold transporte: ΔL=%.3f/%.3f m t=%lu/%u s",
+        delta_m,
+        hold_m,
+        (unsigned long)(elapsed_ms / 1000UL),
+        (unsigned int)hold_to_s);
+  }
+  return 1;
 }
 
 static float fr3d_absf(float v) { return (v < 0.0f) ? -v : v; }
@@ -463,9 +532,10 @@ static void fr3d_pred_ui_track_adjust_from_setpoints(void)
 
 static void fr3d_predictor_apply_10s(void)
 {
-  /* Contrato: corrección por diámetro solo ajusta T y RPM del sinfín (extruder_rpm_set).
-   * No asignar nunca puller_feedrate / puller_feedrate_default aquí: el tirador lo controlan
-   * PAUT/lazo automático de pulling u órdenes PR en manual, no este predictor. */
+  /* Contrato:
+   * - Corrección por Ø (fuera de banda): T + RPM sinfín (E). No mueve pulling.
+   * - Optimizar ON + cerca de banda: busca P* (eficiencia observada en PAUT) con pasos E+T.
+   *   PULL permanece en Auto: el lazo de tiraje es quien hace subir/bajar P. */
   fr3d_pred_ui_clear();
   if (fr3d_pred_enabled == 0) {
     fr3d_pred_ui_set_idle(' ');
@@ -505,10 +575,11 @@ static void fr3d_predictor_apply_10s(void)
   // - diámetro medio disponible del último tramo 10 s
   const bool es1_ok = (extrude_status & ES_ENABLE_SET) != 0;
   const bool run_state_ok = ((extrude_status & ES_HOT_SET) != 0) && ((extrude_status & ES_SWITCH_SET) != 0);
+  /* Ø y Optimizar exigen PAUT: P es métrica; el Auto de tiraje es la magia del lazo. */
   const bool pull_auto_ok = (extrude_status & ES_AUTO_SET) != 0;
   if (!es1_ok || !run_state_ok || !pull_auto_ok) {
     fr3d_pred_ui_set_idle('G'); /* AG: gate ES/RUN/PULL_AUTO */
-    fr3d_pred_set_pair("Sin accion predictor", "Gate: ES/RUN/PULL_AUTO no cumplido");
+    fr3d_pred_set_pair("Sin accion predictor", "Gate: ES/RUN/PULL no cumplido");
     return;
   }
 
@@ -525,25 +596,36 @@ static void fr3d_predictor_apply_10s(void)
     return;
   }
 
-  if (fr3d_diam_samples_n == 0) {
-    fr3d_pred_ui_set_idle('N'); /* AN: 0 = faltan muestras, no Ø real */
+  float d_mean = 0.0f;
+  float d_span = 0.0f;
+  if (!fr3d_diam_for_pred(&d_mean, &d_span)) {
+    fr3d_pred_ui_set_idle('N');
     fr3d_pred_set_pair("Sin accion predictor", "Faltan muestras de diametro");
     return;
   }
 
   fr3d_pred_fusion_id++;
 
-  const float d_mean = fr3d_diam_median_10s;
-  if (d_mean < 1.0f) {
-    fr3d_pred_ui_set_idle('N');
-    fr3d_pred_set_pair("Sin accion predictor", "Faltan muestras de diametro");
-    return;
-  }
-  const float d_span = max(0.0f, fr3d_diam_max_10s - fr3d_diam_min_10s);
   const float tgt = fr3d_pred_target_diam_mm;
   const float band_lo = tgt - fr3d_pred_deadband_half_mm;
   const float band_hi = tgt + fr3d_pred_deadband_half_mm;
+  const float slack = max(0.0f, FR3D_PRED_OPT_BAND_SLACK_MM);
+  const float soft_lo = band_lo - slack;
+  const float soft_hi = band_hi + slack;
   const bool in_band = (d_mean >= band_lo && d_mean <= band_hi);
+  const bool in_soft_band = (d_mean >= soft_lo && d_mean <= soft_hi);
+  /* Con Optimizar+P*: la holgura evita resetear el dwell por un leve sobrepaso. */
+  const bool dwell_band =
+      (fr3d_pred_optimize && fr3d_pred_p_star_valid) ? in_soft_band : in_band;
+  if (dwell_band) {
+    if (fr3d_pred_in_band_since_ms == 0UL)
+      fr3d_pred_in_band_since_ms = millis();
+  } else {
+    fr3d_pred_in_band_since_ms = 0UL;
+  }
+  const uint8_t opt_dwell_ok =
+      (fr3d_pred_in_band_since_ms != 0UL) &&
+      ((millis() - fr3d_pred_in_band_since_ms) >= FR3D_PRED_OPT_DWELL_MS);
   const float cur_e = extruder_rpm_set;
   const int cur_t = (int)(degTargetHotend(0) + 0.5f);
   const float cur_p = fr3d_pred_pull_rpm();
@@ -559,28 +641,37 @@ static void fr3d_predictor_apply_10s(void)
 
   if (regime_ok) {
     if (!fr3d_pred_ep_inited) {
-      fr3d_pred_ep_e0 = cur_e;
-      fr3d_pred_ep_p0 = cur_p;
-      fr3d_pred_ep_t0 = millis();
-      fr3d_pred_ep_inited = 1;
-      fr3d_pred_ep_dead = 0;
-      fr3d_pred_ep_e_up = 0;
-    } else if ((millis() - fr3d_pred_ep_t0) >= FR3D_PRED_EP_WINDOW_MS) {
+      fr3d_pred_ep_reset(cur_e, cur_p);
+    } else {
       const float dE = cur_e - fr3d_pred_ep_e0;
       const float dP = cur_p - fr3d_pred_ep_p0;
+      const float dE_abs = (dE >= 0.0f) ? dE : -dE;
+      const float dP_abs = (dP >= 0.0f) ? dP : -dP;
+      const bool e_sig = (dE_abs >= FR3D_PRED_EP_DE_SIG);
+      const bool p_followed = (dP_abs >= FR3D_PRED_EP_DP_FLAT);
       fr3d_pred_ep_e_up = (dE >= FR3D_PRED_EP_DE_SIG) ? 1 : 0;
-      fr3d_pred_ep_dead = (fr3d_pred_ep_e_up && (fr3d_absf(dP) <= FR3D_PRED_EP_DP_FLAT)) ? 1 : 0;
-      fr3d_pred_ep_e0 = cur_e;
-      fr3d_pred_ep_p0 = cur_p;
-      fr3d_pred_ep_t0 = millis();
+      if (e_sig && p_followed) {
+        /* E cambió ≥2 y P también: acoplado. Nueva referencia. */
+        fr3d_pred_ep_reset(cur_e, cur_p);
+      } else if (e_sig) {
+        if (fr3d_pred_ep_dead_since_ms == 0UL)
+          fr3d_pred_ep_dead_since_ms = millis();
+        fr3d_pred_ep_dead =
+            ((millis() - fr3d_pred_ep_dead_since_ms) >= FR3D_PRED_EP_PERSIST_MS) ? 1 : 0;
+      } else {
+        /* |ΔE|<2: aún no es zona problema. No mover la referencia (acumula). */
+        fr3d_pred_ep_dead = 0;
+        fr3d_pred_ep_dead_since_ms = 0;
+      }
     }
   } else {
     fr3d_pred_ep_inited = 0;
     fr3d_pred_ep_dead = 0;
+    fr3d_pred_ep_dead_since_ms = 0;
   }
 
   if (fr3d_pred_opt_acted_last) {
-    if (!in_band) {
+    if (!in_soft_band) {
       if (fr3d_pred_opt_diam_out_streak < 255) fr3d_pred_opt_diam_out_streak++;
       if (fr3d_pred_opt_diam_out_streak >= (uint8_t)FR3D_PRED_OPT_ABORT_DIAM_STREAK)
         fr3d_pred_begin_freeze();
@@ -590,30 +681,42 @@ static void fr3d_predictor_apply_10s(void)
     fr3d_pred_opt_acted_last = 0;
   }
 
-  if (regime_ok && fr3d_pred_mode == 1 && fr3d_pred_ep_dead && fr3d_pred_ep_e_up) {
+  uint8_t health_warn = 0;
+  char health_warn_c = ' ';
+  if (regime_ok && fr3d_pred_mode == 1 && fr3d_pred_ep_dead) {
     const int t_mid = ((int)t_lo + (int)t_hi) / 2;
     const bool slip = (cur_t >= t_mid);
+    const bool e_up = (fr3d_pred_ep_e_up != 0);
+    if (fr3d_pred_optimize == 0) {
+      /* Optimizar OFF: solo aviso, no tocar E/T. */
+      health_warn = 1;
+      health_warn_c = slip ? 'P' : 'U';
+    } else {
     int next_t = cur_t;
     float next_e = cur_e;
     if (slip) {
-      if (d_mean <= tgt) {
+      if (e_up)
+        next_e = max(r_lo, cur_e - FR3D_PRED_EP_CORRECT_E);
+      if (d_mean <= tgt)
         next_t = max((int)t_lo, cur_t - 2);
-        next_e = max(r_lo, cur_e - max(0.30f, FR3D_PRED_EP_DE_SIG));
-      } else {
-        next_e = max(r_lo, cur_e - max(0.30f, FR3D_PRED_EP_DE_SIG));
-        if (cur_t > (int)t_lo) next_t = cur_t - 1;
-      }
+      else if (cur_t > (int)t_lo)
+        next_t = cur_t - 1;
       fr3d_pred_ui_set_idle('P');
-      fr3d_pred_set_pair("Patinaje: salida urgente", "E sube y P no responde (T alta)");
+      fr3d_pred_set_pair(
+          "Patinaje: salida (90 s)",
+          e_up ? "E subio >=2 rpm y P no siguio" : "E bajo >=2 rpm y P no siguio");
     } else {
       next_t = min((int)t_hi, cur_t + 2);
-      if (d_mean < band_lo) next_e = max(r_lo, cur_e - 0.15f);
+      if (e_up && d_mean < band_lo)
+        next_e = max(r_lo, cur_e - FR3D_PRED_EP_CORRECT_E);
       fr3d_pred_ui_set_idle('U');
-      fr3d_pred_set_pair("No fusion: salida urgente", "E sube y P no responde (T baja)");
+      fr3d_pred_set_pair(
+          "No fusion: salida (90 s)",
+          e_up ? "E subio >=2 rpm y P no siguio (T baja)" : "E bajo >=2 rpm y P no siguio (T baja)");
     }
     bool chg = false;
     if (fr3d_absf(next_e - cur_e) >= 0.001f) {
-      extruder_rpm_set = constrain(next_e, EXTRUDER_RPM_MIN, EXTRUDER_RPM_MAX);
+      fr3d_pred_apply_e(next_e);
       chg = true;
     }
     if (next_t != cur_t) {
@@ -623,11 +726,16 @@ static void fr3d_predictor_apply_10s(void)
     }
     if (chg) fr3d_pred_mark_transport_hold();
     fr3d_pred_begin_freeze();
-    fr3d_pred_ep_dead = 0;
+    fr3d_pred_ep_reset(extruder_rpm_set, cur_p);
     return;
+    }
   }
 
-  if (in_band) {
+  char hold_detail[170];
+  hold_detail[0] = 0;
+  const uint8_t hold_wait = fr3d_pred_transport_hold_tick(hold_detail, sizeof(hold_detail));
+
+  if (in_soft_band) {
     fr3d_pred_margin_bypass = 0;
     fr3d_pred_margin_corner_streak = 0;
     if (regime_ok) {
@@ -638,57 +746,102 @@ static void fr3d_predictor_apply_10s(void)
         fr3d_pred_p_ref = 0.85f * fr3d_pred_p_ref + 0.15f * cur_p;
       }
     }
-    const float p_lo = max(FR3D_PRED_P_ABS_MIN, fr3d_pred_p_ref - FR3D_PRED_P_BAND);
-    const float p_hi = min(FR3D_PRED_P_ABS_MAX, fr3d_pred_p_ref + FR3D_PRED_P_BAND);
+    /* P* vacío (valid=0): no buscar eficiencia; no sembrar con P act. */
     char detail[170];
-    snprintf(detail, sizeof(detail), "d=%.3f en banda [%.3f..%.3f] P=%.1f ref=%.1f", d_mean, band_lo, band_hi, cur_p, fr3d_pred_p_ref);
+    if (hold_wait) {
+      fr3d_pred_ui_set_idle('H');
+      fr3d_pred_set_pair("Optimizar: espera transporte", hold_detail[0] ? hold_detail : "Hold transporte");
+      return;
+    }
+    if (fr3d_pred_p_star_valid)
+      snprintf(detail, sizeof(detail), "d=%.3f banda[%.3f..%.3f] P=%.1f P*=%.1f E=%.2f src=%s", d_mean, band_lo, band_hi, cur_p, fr3d_pred_p_star, cur_e,
+               (fr3d_diam_src == 2) ? "MAN" : ((fr3d_diam_src == 1) ? "USB" : "A3"));
+    else
+      snprintf(detail, sizeof(detail), "d=%.3f banda[%.3f..%.3f] P=%.1f P*=- E=%.2f src=%s", d_mean, band_lo, band_hi, cur_p, cur_e,
+               (fr3d_diam_src == 2) ? "MAN" : ((fr3d_diam_src == 1) ? "USB" : "A3"));
 
-    if (fr3d_pred_optimize && fr3d_pred_mode == 1 && regime_ok && !freeze_on && !fr3d_pred_transport_hold_active) {
+    if (fr3d_pred_optimize && fr3d_pred_mode == 1 && regime_ok && !freeze_on &&
+        opt_dwell_ok && fr3d_pred_p_star_valid) {
+      const float p_star = fr3d_pred_p_star;
       float next_e = cur_e;
       int next_t = cur_t;
-      int next_f = default_winder_speed;
-      const bool e_maxed = cur_e >= (r_hi - 0.05f);
-      const bool t_maxed = cur_t >= ((int)t_hi - 1);
-      if (cur_p < p_lo) {
-        if (!e_maxed) next_e = min(r_hi, cur_e + 0.15f);
-        if (!t_maxed) next_t = min((int)t_hi, cur_t + 1);
-      } else if (cur_p < p_hi) {
-        if (!e_maxed) next_e = min(r_hi, cur_e + 0.10f);
-      } else if (e_maxed && t_maxed && next_f < FR3D_PRED_F_MAX_PCT) {
-        next_f = min(FR3D_PRED_F_MAX_PCT, next_f + 5);
-      } else if (e_maxed && t_maxed && next_f >= FR3D_PRED_F_MAX_PCT) {
-        fr3d_pred_ui_set_idle('B');
-        fr3d_pred_set_pair("Optimizar: E/T/F al limite", "Revisar distancia del sensor (manual)");
-        return;
+      const float err_p = cur_p - p_star;
+      const bool at_star = (fr3d_absf(err_p) <= FR3D_PRED_P_STAR_EPS);
+      if (!at_star) {
+        if (cur_p < p_star) {
+          /* Subir eficiencia observada: ↑E y ↑T; Auto pull hace subir P. */
+          next_e = cur_e + FR3D_PRED_OPT_E_STEP;
+          if (next_e > r_hi) next_e = r_hi;
+          if (cur_t < (int)t_hi) next_t = cur_t + 1;
+        } else {
+          /* Bajar eficiencia: ↓E y ↓T suave. */
+          next_e = cur_e - FR3D_PRED_OPT_E_STEP;
+          if (next_e < r_lo) next_e = r_lo;
+          if (cur_t > (int)t_lo) next_t = cur_t - 1;
+        }
+        next_e = constrain(next_e, EXTRUDER_RPM_MIN, EXTRUDER_RPM_MAX);
+        next_e = constrain(next_e, r_lo, r_hi);
       }
       bool chg = false;
-      if (fr3d_absf(next_e - cur_e) >= 0.001f) {
-        extruder_rpm_set = constrain(next_e, EXTRUDER_RPM_MIN, EXTRUDER_RPM_MAX);
+      const bool chg_e = (fr3d_absf(next_e - cur_e) >= 0.001f);
+      const bool chg_t = (next_t != cur_t);
+      if (chg_e) {
+        fr3d_pred_apply_e(next_e);
         chg = true;
       }
-      if (next_t != cur_t) {
+      if (chg_t) {
         setTargetHotend0(next_t);
         fr3d_pred_last_t_change_fusion = (int32_t)fr3d_pred_fusion_id;
-        chg = true;
-      }
-      if (next_f != default_winder_speed) {
-        fr3d_pred_set_fan_pct(next_f);
         chg = true;
       }
       if (chg) {
         fr3d_pred_mark_transport_hold();
         fr3d_pred_opt_acted_last = 1;
-        fr3d_pred_ui_set('A', next_e != cur_e, next_t != cur_t, next_e - cur_e, next_t - cur_t, next_e, next_t);
-        fr3d_pred_set_pair("Optimizar P (sesion)", detail);
+        fr3d_pred_ui_set('A', chg_e, chg_t, next_e - cur_e, next_t - cur_t, next_e, next_t);
+        char main_msg[110];
+        if (chg_e && chg_t)
+          snprintf(main_msg, sizeof(main_msg), "Optimizar: E %.2f->%.2f  T %d->%d", cur_e, next_e, cur_t, next_t);
+        else if (chg_e)
+          snprintf(main_msg, sizeof(main_msg), "Optimizar: E %.2f->%.2f", cur_e, next_e);
+        else
+          snprintf(main_msg, sizeof(main_msg), "Optimizar: T %d->%d", cur_t, next_t);
+        fr3d_pred_set_pair(main_msg, detail);
         return;
       }
+      if (at_star) {
+        fr3d_pred_ui_set_idle('B');
+        fr3d_pred_set_pair("Optimizar: en P*", detail);
+        return;
+      }
+      fr3d_pred_ui_set_idle('B');
+      fr3d_pred_set_pair("Optimizar: E/T en limite", detail);
+      return;
     }
 
+    if (health_warn) {
+      fr3d_pred_ui_set_idle(health_warn_c);
+      if (health_warn_c == 'P')
+        fr3d_pred_set_pair("Patinaje (aviso)", "Optimizar OFF: no se corrige E/T");
+      else
+        fr3d_pred_set_pair("No fusion (aviso)", "Optimizar OFF: no se corrige E/T");
+      return;
+    }
+    /* Leve sobrepaso: no entrar a DIAM_CTRL agresivo; esperar Auto/transporte. */
+    if (!in_band && fr3d_pred_optimize && fr3d_pred_p_star_valid && !freeze_on) {
+      fr3d_pred_ui_set_idle('B');
+      fr3d_pred_set_pair("Optimizar: Ø cerca de banda", detail);
+      return;
+    }
     if (freeze_on)
       fr3d_pred_ui_set_idle('Z');
     else
       fr3d_pred_ui_set_idle('B');
-    fr3d_pred_set_pair("Sin accion predictor", detail);
+    if (fr3d_pred_optimize && regime_ok && !opt_dwell_ok && !freeze_on)
+      fr3d_pred_set_pair("Optimizar: espera 90 s en banda", detail);
+    else if (fr3d_pred_optimize && !fr3d_pred_p_star_valid)
+      fr3d_pred_set_pair("Optimizar: sin P* (P act estable)", detail);
+    else
+      fr3d_pred_set_pair("Sin accion predictor", detail);
     return;
   }
 
@@ -718,36 +871,10 @@ static void fr3d_predictor_apply_10s(void)
   }
 
   /* Hold de transporte: esperar ΔL (boquilla→sensor) o timeout tras correctivo E/T. */
-  if (fr3d_pred_transport_hold_active) {
-    const float hold_m = max(0.0f, fr3d_pred_hold_m);
-    const uint16_t hold_to_s = fr3d_pred_hold_timeout_s;
-    const unsigned long now_ms = millis();
-    const unsigned long elapsed_ms = now_ms - fr3d_pred_transport_hold_start_ms;
-    const bool timed_out = (hold_to_s > 0) && (elapsed_ms >= (unsigned long)hold_to_s * 1000UL);
-    float delta_m = 0.0f;
-    bool length_reset = false;
-    if (extrude_length + 0.5f < fr3d_pred_transport_l_ref_mm) {
-      length_reset = true;
-    } else {
-      delta_m = (extrude_length - fr3d_pred_transport_l_ref_mm) / 1000.0f;
-    }
-    const bool meters_ok = (hold_m <= 0.0001f) || (delta_m + 0.0001f >= hold_m);
-    if (length_reset || timed_out || meters_ok) {
-      fr3d_pred_transport_hold_active = 0;
-    } else {
-      char detail[170];
-      snprintf(
-          detail,
-          sizeof(detail),
-          "Hold transporte: ΔL=%.3f/%.3f m t=%lu/%u s",
-          delta_m,
-          hold_m,
-          (unsigned long)(elapsed_ms / 1000UL),
-          (unsigned int)hold_to_s);
-      fr3d_pred_ui_set_idle('H');
-      fr3d_pred_set_pair("Sin accion predictor", detail);
-      return;
-    }
+  if (hold_wait) {
+    fr3d_pred_ui_set_idle('H');
+    fr3d_pred_set_pair("Sin accion predictor", hold_detail[0] ? hold_detail : "Hold transporte");
+    return;
   }
 
   // PREDRRNG / pasos dR actúan sobre RPM del sinfín (extruder_rpm_set), no sobre el tirador.
@@ -801,7 +928,7 @@ static void fr3d_predictor_apply_10s(void)
   bool changed_t = false;
   if (fr3d_pred_mode == 1) { // Automático: aplica en firmware (solo E+T, ver contrato arriba).
     if (next_r != cur_r) {
-      extruder_rpm_set = next_r;
+      fr3d_pred_apply_e(next_r);
       changed_r = true;
     }
     if (next_t != cur_t) {
@@ -823,12 +950,13 @@ static void fr3d_predictor_apply_10s(void)
     snprintf(
         detail,
         sizeof(detail),
-        "d=%.3f span=%.3f tgt=%.3f stepE=%.3f stepT=%d%s",
+        "d=%.3f span=%.3f tgt=%.3f stepE=%.3f stepT=%d src=%s%s",
         d_mean,
         d_span,
         tgt,
         step_r,
         step_t,
+        (fr3d_diam_src == 2) ? "MAN" : ((fr3d_diam_src == 1) ? "USB" : "A3"),
         fr3d_pred_margin_bypass ? " MARGIN_BYPASS" : "");
     fr3d_pred_set_pair(main_msg, detail);
     fr3d_pred_ui_set('A', changed_r, changed_t, next_r - cur_r, next_t - cur_t, next_r, next_t);
@@ -839,12 +967,13 @@ static void fr3d_predictor_apply_10s(void)
     snprintf(
         detail,
         sizeof(detail),
-        "d=%.3f span=%.3f tgt=%.3f stepE=%.3f stepT=%d%s",
+        "d=%.3f span=%.3f tgt=%.3f stepE=%.3f stepT=%d src=%s%s",
         d_mean,
         d_span,
         tgt,
         step_r,
         step_t,
+        (fr3d_diam_src == 2) ? "MAN" : ((fr3d_diam_src == 1) ? "USB" : "A3"),
         fr3d_pred_margin_bypass ? " MARGIN_BYPASS" : "");
     fr3d_pred_set_pair(main_msg, detail);
     /* Auto OFF: LCD/Flutter = SIN A (sin tokens E/T). */
@@ -895,9 +1024,38 @@ static float fr3d_read_hall_diameter_mm(void)
 
 static float fr3d_get_csv_diameter_mm(void)
 {
-  if (fr3d_diam_src != 0 && fr3d_diam_host_fresh())
+  /* Un solo Ø: nunca mezclar Hall con USB/Manual. */
+  if (fr3d_diam_src == 2)
     return fr3d_host_diam_mm;
+  if (fr3d_diam_src == 1) {
+    if (fr3d_diam_host_fresh())
+      return fr3d_host_diam_mm;
+    return 0.0f;
+  }
   return fr3d_read_hall_diameter_mm();
+}
+
+static uint8_t fr3d_diam_for_pred(float *d_mean, float *d_span)
+{
+  if (fr3d_diam_src == 2) {
+    *d_mean = fr3d_host_diam_mm;
+    *d_span = 0.0f;
+    return (*d_mean >= 1.0f) ? 1 : 0;
+  }
+  if (fr3d_diam_src == 1) {
+    if (!fr3d_diam_host_fresh())
+      return 0;
+    if (fr3d_diam_samples_n == 0) {
+      *d_mean = fr3d_host_diam_mm;
+      *d_span = 0.0f;
+      return (*d_mean >= 1.0f) ? 1 : 0;
+    }
+  } else if (fr3d_diam_samples_n == 0) {
+    return 0;
+  }
+  *d_mean = fr3d_diam_median_10s;
+  *d_span = max(0.0f, fr3d_diam_max_10s - fr3d_diam_min_10s);
+  return (*d_mean >= 1.0f) ? 1 : 0;
 }
 
 static void fr3d_diam_sample(float value)
@@ -916,6 +1074,20 @@ static void fr3d_diam_glitch_filter_reset(float seed_mm)
 
 static void fr3d_diam_try_sample(float raw_mm)
 {
+  if (raw_mm < 1.0f)
+    return;
+  /* Filtro 1.50 mm solo Hall A3. USB/Manual no se recortan. */
+  if (fr3d_diam_src != 0) {
+    if (fr3d_diam_raw_samples_total < 65535U)
+      fr3d_diam_raw_samples_total++;
+    fr3d_diam_sample(raw_mm);
+    fr3d_diam_last_accepted_mm = raw_mm;
+    fr3d_diam_prev_raw_mm = raw_mm;
+    if (fr3d_diam_accepted_samples_total < 65535U)
+      fr3d_diam_accepted_samples_total++;
+    return;
+  }
+
   const float k_filament_mm = 1.53f;
   const float k_floor_hi_mm = 1.52f;
 

@@ -212,6 +212,8 @@ extern float extruder_feedrate;
 extern float extruder_rpm; 
 extern float extruder_rpm_set;
 extern float puller_feedrate;
+extern float puller_feedrate_default;
+extern float puller_feedrate_last;
 extern float homing_feedrate[];
 extern bool axis_relative_modes[];
 extern unsigned char extrude_status;
@@ -240,7 +242,6 @@ extern float extrude_length;
 extern float fil_length_cutoff;
 extern float filament_control; //output of the PID controller
 extern volatile float filament_width_meas; //holds the filament width as measured by the sensor
-extern float puller_feedrate_default;
 extern int feedmultiply;
 extern unsigned long duration;
 extern unsigned long timeremaining;
