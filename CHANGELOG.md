@@ -2,6 +2,15 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [gateway-v2.4.12] — 2026-08-17
+
+### Gateway program (Pi OTA)
+
+- Release tag [`gateway-v2.4.12`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/gateway-v2.4.12): Pi OTA zip (Windows zip unchanged vs 2.4.11)
+- Manual Ø no longer overwritten by a stale 1.75 mm inject tick when idle
+- Diameter bar scale follows predictor target (−0.15 / +0.25); live Ø is shown on the thumb
+- Update Pi with CONSOLE `PI UPDATE GATEWAY latest` (does not replace the SD factory image)
+
 ## [gateway-v2.4.11] — 2026-08-16
 
 ### Gateway program (Pi OTA + Windows)
