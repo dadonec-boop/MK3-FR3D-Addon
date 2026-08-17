@@ -2,6 +2,14 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [gateway-v2.4.11] — 2026-08-16
+
+### Gateway program (Pi OTA + Windows)
+
+- Release tag [`gateway-v2.4.11`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/gateway-v2.4.11): Pi OTA zip, Windows x64 zip, MK3 firmware zip
+- Web app 2.0.31: pairing/login opens the FR3dAddon product-family WIKI; pairing can return to sign-in without a token
+- Update Pi with CONSOLE `PI UPDATE GATEWAY latest` (does not replace the SD factory image)
+
 ## [gateway-v2.4.10] — 2026-08-15
 
 ### Gateway program (Pi OTA + Windows)
