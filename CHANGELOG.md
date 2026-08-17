@@ -4,12 +4,14 @@ History of meaningful firmware changes relative to the original Desktop Filament
 
 ## [gateway-v2.4.12] — 2026-08-17
 
-### Gateway program (Pi OTA)
+### Gateway program (Pi OTA + Windows) and MK3 firmware
 
-- Release tag [`gateway-v2.4.12`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/gateway-v2.4.12): Pi OTA zip (Windows zip unchanged vs 2.4.11)
-- Manual Ø no longer overwritten by a stale 1.75 mm inject tick when idle
-- Diameter bar scale follows predictor target (−0.15 / +0.25); live Ø is shown on the thumb
+- Release tag [`gateway-v2.4.12`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/gateway-v2.4.12): Pi OTA zip, Windows x64 zip, MK3 firmware zip
+- Manual Ø range **1.20–2.80 mm** (LCD `D mm`, host `DIAMSET`, web Manual bar). Hall Analog A3 stays 1.50–2.20 mm
+- Apply Target D no longer overwritten by a stale QUERY after PRED APPLY
+- Web app **2.0.34**: Tips & tricks — two-pass homogenization of the grind; colour recipes on light-grey grind
 - Update Pi with CONSOLE `PI UPDATE GATEWAY latest` (does not replace the SD factory image)
+- **Reflash the MK3 board** to use LCD / DIAMSET up to 2.80 mm
 
 ## [gateway-v2.4.11] — 2026-08-16
 

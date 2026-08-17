@@ -1383,7 +1383,7 @@ static void lcd_addonfr3d_hall_a3_menu()
       MENU_ITEM(submenu, "Source A3", lcd_diam_src_menu);
     if (fr3d_diam_src == 2) {
       lcd_diam_manual_edit = fr3d_diam_host_get();
-      MENU_ITEM_EDIT_CALLBACK(float32, "D mm", &lcd_diam_manual_edit, 1.50, 2.00, lcd_diam_manual_store);
+      MENU_ITEM_EDIT_CALLBACK(float32, "D mm", &lcd_diam_manual_edit, 1.20, 2.80, lcd_diam_manual_store);
       MENU_ITEM(function, "Hall cal host off", lcd_hall_now_info);
     } else if (fr3d_diam_src == 1) {
       MENU_ITEM(function, "Hall cal USB off", lcd_hall_now_info);

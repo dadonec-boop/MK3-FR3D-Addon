@@ -52,8 +52,8 @@ float fr3d_diam_host_get(void)
 
 void fr3d_diam_host_set(float mm)
 {
-  if (mm < 1.50f) mm = 1.50f;
-  if (mm > 2.20f) mm = 2.20f;
+  if (mm < 1.20f) mm = 1.20f;
+  if (mm > 2.80f) mm = 2.80f;
   const float prev = fr3d_host_diam_mm;
   fr3d_host_diam_mm = mm;
   fr3d_host_diam_ms = millis();
