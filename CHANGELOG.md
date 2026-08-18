@@ -2,6 +2,15 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [gateway-v2.4.13] — 2026-08-18
+
+### Gateway program (Pi OTA only)
+
+- Release tag [`gateway-v2.4.13`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/gateway-v2.4.13): Pi OTA zip (`fr3d-gateway-*.zip`, `MANIFEST.json`)
+- Same gateway Python as **2.4.12**; version bump to exercise **PI UPDATE GATEWAY latest** from the web app (paired with Firebase UI **2.0.34**)
+- Web app fixes (Firebase deploy, not in this zip): Digital USB diameter bar fallback (`HOSTD`), CONFIG sensor source (A3/USB/Manual) single-click
+- Update Pi with CONSOLE `PI UPDATE GATEWAY latest` or the startup Yes/No prompt — **does not replace the SD factory image**
+
 ## [gateway-v2.4.12] — 2026-08-17
 
 ### Gateway program (Pi OTA + Windows) and MK3 firmware
