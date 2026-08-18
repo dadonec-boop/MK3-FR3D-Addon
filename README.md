@@ -18,6 +18,7 @@ You can use this firmware in two ways:
 | `MK3/` | Firmware sources (Arduino / Mega — flash this folder) |
 | [`dist/MK3-FR3D-Addon.zip`](dist/MK3-FR3D-Addon.zip) | Ready-to-download ZIP of `MK3/` for Arduino IDE |
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
+| [`docs/ayuda_fr3d_es_revision.docx`](docs/ayuda_fr3d_es_revision.docx) | Web app in-app help — Spanish review export (106 topics; live help at [fr3d-addon.web.app](https://fr3d-addon.web.app/)) |
 | [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/) | Printable Hall-effect (INFIDEL-style) diameter-sensor parts (STL) |
 | [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
 | [Windows gateway (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/latest) | Optional Windows PC gateway package (`FR3DGateway-windows-x64.zip` — **exe binary only**) |

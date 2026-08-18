@@ -10,6 +10,8 @@ History of meaningful firmware changes relative to the original Desktop Filament
 - Manual Ø range **1.20–2.80 mm** (LCD `D mm`, host `DIAMSET`, web Manual bar). Hall Analog A3 stays 1.50–2.20 mm
 - Apply Target D no longer overwritten by a stale QUERY after PRED APPLY
 - Web app **2.0.34**: Tips & tricks — two-pass homogenization of the grind; colour recipes on light-grey grind
+- Web app help (106 topics, EN/ES/DE at [fr3d-addon.web.app](https://fr3d-addon.web.app/)): quick start (Standalone / LAN / FULL Cloud), **system architecture note** (firmware keeps the feedback loop; gateway handles monitoring), LCD predictor cheat sheet, sensor calibration troubleshooting, when to use **Optimizar P\***, masterbatch **>5%** warning, two-pass recipe limits
+- In-app help review export: [`docs/ayuda_fr3d_es_revision.docx`](docs/ayuda_fr3d_es_revision.docx)
 - Update Pi with CONSOLE `PI UPDATE GATEWAY latest` (does not replace the SD factory image)
 - **Reflash the MK3 board** to use LCD / DIAMSET up to 2.80 mm
 
