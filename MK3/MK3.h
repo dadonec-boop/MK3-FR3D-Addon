@@ -257,6 +257,7 @@ extern bool fr3d_serial_filter_msgs;
 #if defined(FR3D_HALL_DIAMETER_PIN) && (FR3D_HALL_DIAMETER_PIN > -1)
 /* ADC compartido con el ISR de temperatura: no usar analogRead() en el Hall. */
 float fr3d_hall_adc_read_now(void);
+float fr3d_hall_adc_capture_avg(void);
 #endif
 
 extern int extrudemultiply; // Sets extrude multiply factor (in percent) for all extruders

@@ -53,95 +53,93 @@ float current_temperature_bed = 0.0;
   float sensorRunoutMin = DEFAULT_SENSOR_RUNOUT_MIN;
   float sensorRunoutMax = DEFAULT_SENSOR_RUNOUT_MAX;
   uint8_t fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
-  float fr3d_hall_cal_adc_170 = FR3D_HALL_CAL_ADC_170;
-  float fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
-  float fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
+  float fr3d_hall_cal_adc[FR3D_HALL_CAL_N] = {
+    FR3D_HALL_CAL_ADC_DEFAULT_0,
+    FR3D_HALL_CAL_ADC_DEFAULT_1,
+    FR3D_HALL_CAL_ADC_DEFAULT_2,
+    FR3D_HALL_CAL_ADC_DEFAULT_3,
+    FR3D_HALL_CAL_ADC_DEFAULT_4,
+    FR3D_HALL_CAL_ADC_DEFAULT_5
+  };
   float fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
-  uint8_t fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
+  uint8_t fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_SIX;
   uint8_t fr3d_hall_cal_valid = (uint8_t)FR3D_HALL_CAL_VALID_DEFAULT;
   uint8_t fr3d_hall_cal_mask = 0;
 
   float fr3d_hall_pattern_mm(uint8_t idx)
   {
-    if (fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
+    switch (idx)
     {
-      if (idx == 0) return FR3D_HALL_PAT_B_LO_MM;
-      if (idx == 1) return FR3D_HALL_PAT_B_MID_MM;
-      return FR3D_HALL_PAT_B_HI_MM;
+      case 0: return FR3D_HALL_PAT_MM_0;
+      case 1: return FR3D_HALL_PAT_MM_1;
+      case 2: return FR3D_HALL_PAT_MM_2;
+      case 3: return FR3D_HALL_PAT_MM_3;
+      case 4: return FR3D_HALL_PAT_MM_4;
+      default: return FR3D_HALL_PAT_MM_5;
     }
-    if (idx == 0) return FR3D_HALL_PAT_A_LO_MM;
-    if (idx == 1) return FR3D_HALL_PAT_A_MID_MM;
-    return FR3D_HALL_PAT_A_HI_MM;
   }
 
-  void fr3d_hall_set_pattern(uint8_t pat)
+  void fr3d_hall_reset_cal(void)
   {
-    if (pat > FR3D_HALL_PATTERN_B)
-      pat = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
-    fr3d_hall_pattern = pat;
+    fr3d_hall_cal_adc[0] = FR3D_HALL_CAL_ADC_DEFAULT_0;
+    fr3d_hall_cal_adc[1] = FR3D_HALL_CAL_ADC_DEFAULT_1;
+    fr3d_hall_cal_adc[2] = FR3D_HALL_CAL_ADC_DEFAULT_2;
+    fr3d_hall_cal_adc[3] = FR3D_HALL_CAL_ADC_DEFAULT_3;
+    fr3d_hall_cal_adc[4] = FR3D_HALL_CAL_ADC_DEFAULT_4;
+    fr3d_hall_cal_adc[5] = FR3D_HALL_CAL_ADC_DEFAULT_5;
+    fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_SIX;
     fr3d_hall_cal_valid = 0;
     fr3d_hall_cal_mask = 0;
-    fr3d_hall_cal_adc_170 = FR3D_HALL_CAL_ADC_170;
-    fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
-    fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
-    /* No arrastrar DOFF del patrón anterior al forzar recalibración. */
     fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
   }
 
   void fr3d_hall_note_point_saved(uint8_t bit)
   {
-    if (bit > 2) return;
+    if (bit >= FR3D_HALL_CAL_N) return;
     fr3d_hall_cal_mask = (uint8_t)(fr3d_hall_cal_mask | (1u << bit));
-    if ((fr3d_hall_cal_mask & 0x07u) == 0x07u)
+    if ((fr3d_hall_cal_mask & FR3D_HALL_CAL_MASK_ALL) == FR3D_HALL_CAL_MASK_ALL &&
+        fr3d_hall_points_look_saved())
       fr3d_hall_cal_valid = 1;
+    else
+      fr3d_hall_cal_valid = 0;
   }
 
   void fr3d_hall_migrate_from_legacy_adc(void)
   {
-    const bool looks_calibrated =
-        (fr3d_hall_cal_adc_170 != FR3D_HALL_CAL_ADC_170) ||
-        (fr3d_hall_cal_adc_175 != FR3D_HALL_CAL_ADC_175) ||
-        (fr3d_hall_cal_adc_180 != FR3D_HALL_CAL_ADC_180);
-    if (looks_calibrated)
-    {
-      fr3d_hall_pattern = FR3D_HALL_PATTERN_B;
-      fr3d_hall_cal_valid = 1;
-      fr3d_hall_cal_mask = 0x07;
-    }
-    else
-    {
-      fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
-      fr3d_hall_cal_valid = 0;
-      fr3d_hall_cal_mask = 0;
-    }
+    /* V32 no reutiliza cal de 3 puntos. */
+    fr3d_hall_reset_cal();
   }
 
   uint8_t fr3d_hall_points_look_saved(void)
   {
-    /* Defaults de fábrica (Configuration.h): si los 3 coinciden, no hay cal real. */
-    if (fr3d_hall_cal_adc_170 == FR3D_HALL_CAL_ADC_170 &&
-        fr3d_hall_cal_adc_175 == FR3D_HALL_CAL_ADC_175 &&
-        fr3d_hall_cal_adc_180 == FR3D_HALL_CAL_ADC_180)
+    if (fr3d_hall_cal_adc[0] == FR3D_HALL_CAL_ADC_DEFAULT_0 &&
+        fr3d_hall_cal_adc[1] == FR3D_HALL_CAL_ADC_DEFAULT_1 &&
+        fr3d_hall_cal_adc[2] == FR3D_HALL_CAL_ADC_DEFAULT_2 &&
+        fr3d_hall_cal_adc[3] == FR3D_HALL_CAL_ADC_DEFAULT_3 &&
+        fr3d_hall_cal_adc[4] == FR3D_HALL_CAL_ADC_DEFAULT_4 &&
+        fr3d_hall_cal_adc[5] == FR3D_HALL_CAL_ADC_DEFAULT_5)
       return 0;
-    /* Exigir que los tres slots sean distintos (cal de 3 puntos usable). */
-    if (fr3d_hall_cal_adc_170 == fr3d_hall_cal_adc_175) return 0;
-    if (fr3d_hall_cal_adc_175 == fr3d_hall_cal_adc_180) return 0;
-    if (fr3d_hall_cal_adc_170 == fr3d_hall_cal_adc_180) return 0;
-    return 1;
+    bool inc = true;
+    bool dec = true;
+    uint8_t i;
+    for (i = 0; i < (FR3D_HALL_CAL_N - 1); i++)
+    {
+      if (!(fr3d_hall_cal_adc[i] < fr3d_hall_cal_adc[i + 1])) inc = false;
+      if (!(fr3d_hall_cal_adc[i] > fr3d_hall_cal_adc[i + 1])) dec = false;
+    }
+    return (inc || dec) ? 1 : 0;
   }
 
   uint8_t fr3d_hall_activate_saved_cal(void)
   {
-    if (fr3d_hall_cal_valid)
-    {
-      /* Calibrado: asegurar que el medidor esté habilitado para el predictor. */
-      fr3d_hall_diameter_enabled = 1;
-      return 1;
-    }
     if (!fr3d_hall_points_look_saved())
+    {
+      fr3d_hall_cal_valid = 0;
+      fr3d_hall_cal_mask = 0;
       return 0;
+    }
     fr3d_hall_cal_valid = 1;
-    fr3d_hall_cal_mask = 0x07;
+    fr3d_hall_cal_mask = (uint8_t)FR3D_HALL_CAL_MASK_ALL;
     fr3d_hall_diameter_enabled = 1;
     return 1;
   }

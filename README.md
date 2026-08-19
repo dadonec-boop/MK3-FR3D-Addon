@@ -38,12 +38,12 @@ This repository publishes **MK3 board firmware** (GPL-3.0) and, via **GitHub Rel
 
 Compared with original MK3, this firmware includes:
 
-- Diameter measurement (Hall / optical) with LCD **Pattern Diameter** presets and calibration helpers
+- Diameter measurement (Hall / optical) with LCD **6-point** Analog A3 calibration (1.50…2.00 mm)
 - Diameter **predictor** with **Auto On / Off** (automatic E/T apply vs suggest-only); **Optimizar** sets P* by acting on E+T while puller stays in Auto
 - Predictor parameter menus (basic + Advanced)
 - Host serial temperature setpoint (`T` / `RTFP`) capped dynamically at **max(190 °C, predictor Tmax + 5)**, with heater safety headroom (see CHANGELOG)
 - Compact USB host commands and CSV telemetry (on-demand `CSVQ`; internal fusion 2 s)
-- Extended EEPROM layout for FR3D settings (current schema **V30**)
+- Extended EEPROM layout for FR3D settings (current schema **V32**)
 
 See [CHANGELOG.md](CHANGELOG.md) for the full list of changes versus original MK3.
 
@@ -56,7 +56,7 @@ For MK3S+ with FR3D Addon operating from the machine LCD (**standalone** — wit
 - [USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
 - [USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.docx](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.docx) (editable Word)
 
-Covers project scope, Addon FR3D overview, diameter hardware (Hall-effect INFIDEL-style or ARTME 3D optical), **Pattern Diameter** / calibration on the LCD, main-screen use, and recommended steps for automatic predictor operation.
+Covers project scope, Addon FR3D overview, diameter hardware (Hall-effect INFIDEL-style or ARTME 3D optical), **6-point** Analog A3 calibration on the LCD (1.50…2.00 mm), main-screen use, and recommended steps for automatic predictor operation.
 
 Printable Hall parts: [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/).
 
@@ -77,7 +77,7 @@ If you only want to flash the board, download the ready-made package:
 5. Select the correct **board** and **port**.
 6. Click **Upload**.
 
-After a first flash on an older EEPROM, the board may load hardcoded defaults (`Hardcoded Default Settings Loaded` on serial) or migrate known FR3D EEPROM versions to V30.
+After a first flash on an older EEPROM, the board may load hardcoded defaults (`Hardcoded Default Settings Loaded` on serial) or migrate known FR3D EEPROM versions to **V32** (a previous 3-point Hall calibration is reset; recapture six points).
 
 ### Alternative (from source tree)
 
@@ -108,7 +108,7 @@ Download the factory image from the Release:
 - **[fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)**  
   Release notes: [pi-gateway-v0.8](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8)
 
-After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY latest` (currently **2.4.12**). That does **not** replace the SD image.
+After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY latest` (currently **2.4.15**). That does **not** replace the SD image.
 
 ### Flash with Raspberry Pi Imager
 

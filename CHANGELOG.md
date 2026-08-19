@@ -2,6 +2,20 @@
 
 History of meaningful firmware changes relative to the original Desktop Filament Extruder **MK3** (Mackerel) baseline published as tag `v-mk3-original`.
 
+## [gateway-v2.4.15] — 2026-08-18
+
+### MK3 firmware (EEPROM V32) + gateway program (Pi OTA + Windows)
+
+- Release tag [`gateway-v2.4.15`](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/gateway-v2.4.15): Pi OTA zip, Windows x64 zip, MK3 firmware zip
+- Analog A3 Hall calibration is now **one 6-point pattern**: 1.50, 1.60, 1.70, 1.80, 1.90, 2.00 mm (no Pattern A/B). LCD: **6-pt 1.5-2.0** + Capture 1.50…2.00
+- `CALV=1` only if the six ADC values are distinct and monotonic. Flashing V32 **resets** a previous 3-point Hall cal
+- Gateway / web app: if the Mega still has old firmware (no `CALN,6`), the UI keeps Pattern A/B (3 points). USB Digital and Manual Ø are unchanged
+- OTA swap **preserves** `fr3d_web` (avoids nginx 500 after update). Also in this zip vs 2.4.13: USB Ø bar uses HOSTD; CONFIG sensor source (A3/USB/Manual) single-click
+- Web app **2.0.35**: in-app help (EN/ES/DE) updated for 6-point cal; live catalog at [fr3d-addon.web.app](https://fr3d-addon.web.app/)
+- In-app help review export: [`docs/ayuda_fr3d_es_revision.docx`](docs/ayuda_fr3d_es_revision.docx)
+- Update Pi with CONSOLE `PI UPDATE GATEWAY latest` — **does not replace the SD factory image**
+- **Reflash the MK3 board** to use 6-point LCD calibration
+
 ## [gateway-v2.4.13] — 2026-08-18
 
 ### Gateway program (Pi OTA only)

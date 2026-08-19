@@ -55,20 +55,20 @@ extern float current_filwidth;
   extern float fwidthKp,fwidthKi,fwidthKd;
   extern float fFactor1, fFactor2, pcirc, sensorRunoutMin, sensorRunoutMax;
   extern uint8_t fr3d_hall_diameter_enabled;
-  extern float fr3d_hall_cal_adc_170, fr3d_hall_cal_adc_175, fr3d_hall_cal_adc_180;
+  extern float fr3d_hall_cal_adc[FR3D_HALL_CAL_N];
   extern float fr3d_hall_diam_offset_mm;
-  extern uint8_t fr3d_hall_pattern;     /* 0=A (1.5/1.7/2.0), 1=B (1.7/1.75/2.0) */
-  extern uint8_t fr3d_hall_cal_valid;   /* 1 = three pattern points calibrated */
-  extern uint8_t fr3d_hall_cal_mask;    /* bits 0/1/2 = Lo/Mid/Hi points saved */
+  extern uint8_t fr3d_hall_pattern;     /* 6 = patrón único 1.50..2.00 (QUERY PAT,6) */
+  extern uint8_t fr3d_hall_cal_valid;   /* 1 = seis puntos calibrados y monótonos */
+  extern uint8_t fr3d_hall_cal_mask;    /* bits 0..5 = puntos 1.50..2.00 guardados */
   float fr3d_hall_pattern_mm(uint8_t idx);
-  void fr3d_hall_set_pattern(uint8_t pat);
+  void fr3d_hall_reset_cal(void);
   void fr3d_hall_note_point_saved(uint8_t bit);
   void fr3d_hall_migrate_from_legacy_adc(void);
-  /** true si los 3 ADC guardados no son los defaults de fábrica. */
+  /** true si los 6 ADC no son fábrica y son monótonos. */
   uint8_t fr3d_hall_points_look_saved(void);
   /**
-   * Si CALV=0 pero hay 3 puntos guardados, pone CALV=1 y mask=7.
-   * Devuelve 1 si quedó calibrado (ya lo estaba o se reparó).
+   * Si hay 6 ADC usables, pone CALV=1 y mask=0x3F.
+   * Devuelve 1 si quedó calibrado.
    */
   uint8_t fr3d_hall_activate_saved_cal(void);
   extern uint8_t fr3d_pred_enabled, fr3d_pred_mode;

@@ -79,10 +79,35 @@ void _EEPROM_readData(int &pos, uint8_t* value, uint8_t size)
 #ifdef DELTA
 #define EEPROM_VERSION "V11"
 #else
-#define EEPROM_VERSION "V31"
+#define EEPROM_VERSION "V32"
 #endif
 
 #ifdef EEPROM_SETTINGS
+static void fr3d_hall_eeprom_write_points(int &pos)
+{
+  uint8_t k;
+  for (k = 0; k < FR3D_HALL_CAL_N; k++)
+    EEPROM_WRITE_VAR(pos, fr3d_hall_cal_adc[k]);
+}
+
+static void fr3d_hall_eeprom_read_points6(int &pos)
+{
+  uint8_t k;
+  for (k = 0; k < FR3D_HALL_CAL_N; k++)
+    EEPROM_READ_VAR(pos, fr3d_hall_cal_adc[k]);
+}
+
+static void fr3d_hall_eeprom_skip_points3(int &pos)
+{
+  float d0, d1, d2;
+  EEPROM_READ_VAR(pos, d0);
+  EEPROM_READ_VAR(pos, d1);
+  EEPROM_READ_VAR(pos, d2);
+  (void)d0;
+  (void)d1;
+  (void)d2;
+}
+
 /* Con fusión 2 s: T settle < 15 (~30 s) es legacy agresivo → piso al default. */
 static bool fr3d_pred_clamp_legacy_after_eeprom(void)
 {
@@ -174,9 +199,7 @@ void Config_StoreSettings()
   EEPROM_WRITE_VAR(i,sensorRunoutMin);
   EEPROM_WRITE_VAR(i,sensorRunoutMax);
   EEPROM_WRITE_VAR(i,fr3d_hall_diameter_enabled);
-  EEPROM_WRITE_VAR(i,fr3d_hall_cal_adc_170);
-  EEPROM_WRITE_VAR(i,fr3d_hall_cal_adc_175);
-  EEPROM_WRITE_VAR(i,fr3d_hall_cal_adc_180);
+  fr3d_hall_eeprom_write_points(i);
   EEPROM_WRITE_VAR(i,fr3d_hall_diam_offset_mm);
   EEPROM_WRITE_VAR(i,fr3d_hall_pattern);
   EEPROM_WRITE_VAR(i,fr3d_hall_cal_valid);
@@ -454,13 +477,14 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
 #else
     const bool migrate_v30_hall_pattern_b =
       (strncmp("V30", stored_ver, 3) == 0);
-    if (strncmp("V31", stored_ver, 3) == 0 || migrate_v30_hall_pattern_b)
+    if (strncmp("V32", stored_ver, 3) == 0 || strncmp("V31", stored_ver, 3) == 0 || migrate_v30_hall_pattern_b)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        if (strncmp("V32", stored_ver, 3) == 0)
+          fr3d_hall_eeprom_read_points6(i);
+        else
+          fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         EEPROM_READ_VAR(i, fr3d_hall_pattern);
         EEPROM_READ_VAR(i, fr3d_hall_cal_valid);
@@ -518,25 +542,14 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
           fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
         /* DH siempre ON (EEPROM puede traer 0 de FW viejo). */
         fr3d_hall_diameter_enabled = 1;
-        if (fr3d_hall_pattern > FR3D_HALL_PATTERN_B)
-          fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
+        fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_SIX;
         if (fr3d_hall_cal_valid > 1) fr3d_hall_cal_valid = 0;
-        /*
-         * V30 calibraba el slot Hi del patrón B con 1.80 mm. V31 lo cambia
-         * a 2.00 mm: esos ADC no son reutilizables. Invalidar y volver a los
-         * defaults evita publicar CALV=1 con una curva físicamente incorrecta.
-         */
-        if (migrate_v30_hall_pattern_b &&
-            fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
+        if (strncmp("V32", stored_ver, 3) != 0)
         {
-          fr3d_hall_cal_adc_170 = FR3D_HALL_CAL_ADC_170;
-          fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
-          fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
-          fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
-          fr3d_hall_cal_valid = 0;
-          fr3d_hall_cal_mask = 0;
+          /* V31/V30: no reutilizar cal de 3 puntos. */
+          fr3d_hall_reset_cal();
         }
-        /* Update FW: si hay 3 ADC guardados pero CALV quedó en 0, reactivar. */
+        /* Update FW: si hay 6 ADC guardados pero CALV quedó en 0, reactivar. */
         if (fr3d_hall_cal_valid == 0)
           (void)fr3d_hall_activate_saved_cal();
         if (sinfin_compression_mode > 1)
@@ -551,10 +564,10 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
         if (fr3d_pred_hold_timeout_s > 600)
           fr3d_pred_hold_timeout_s = (uint16_t)FR3D_PRED_HOLD_TIMEOUT_S_DEFAULT;
         updatePID();
-        if (migrate_v30_hall_pattern_b)
+        if (strncmp("V32", stored_ver, 3) != 0)
         {
           SERIAL_ECHO_START;
-          SERIAL_ECHOLNPGM("EEPROM V30 -> V31 Hall pattern B 2.00");
+          SERIAL_ECHOLNPGM("EEPROM -> V32 Hall 6-point (recalibrate A3)");
           Config_StoreSettings();
         }
         eeprom_data_loaded = true;
@@ -565,9 +578,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         EEPROM_READ_VAR(i, fr3d_hall_pattern);
         EEPROM_READ_VAR(i, fr3d_hall_cal_valid);
@@ -616,8 +627,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
           fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
         /* DH siempre ON (EEPROM puede traer 0 de FW viejo). */
         fr3d_hall_diameter_enabled = 1;
-        if (fr3d_hall_pattern > FR3D_HALL_PATTERN_B)
-          fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
+        fr3d_hall_reset_cal();
         if (fr3d_hall_cal_valid > 1) fr3d_hall_cal_valid = 0;
         /* Update FW: si hay 3 ADC guardados pero CALV quedó en 0, reactivar. */
         if (fr3d_hall_cal_valid == 0)
@@ -641,9 +651,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         {
           uint8_t fr3d_pred_owner_eeprom_pad = 1;
@@ -705,9 +713,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         {
           uint8_t fr3d_pred_owner_eeprom_pad = 1;
@@ -766,9 +772,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         {
           uint8_t fr3d_pred_owner_eeprom_pad = 1;
@@ -825,9 +829,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         {
           uint8_t fr3d_pred_owner_eeprom_pad = 1;
@@ -882,9 +884,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;
         fr3d_pred_mode = (uint8_t)FR3D_PRED_MODE_DEFAULT;
@@ -929,9 +929,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         {
           uint8_t obsolete_mixer_servos = 0;
@@ -959,9 +957,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         EEPROM_READ_VAR(i, fr3d_hall_diam_offset_mm);
         EEPROM_READ_VAR(i, sinfin_compression_mode);
         #ifdef FR3D_SERIAL_HOST_DISABLE_GM
@@ -984,9 +980,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         EEPROM_READ_VAR(i, fr3d_hall_diameter_enabled);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_170);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_175);
-        EEPROM_READ_VAR(i, fr3d_hall_cal_adc_180);
+        fr3d_hall_eeprom_skip_points3(i);
         fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
         EEPROM_READ_VAR(i, sinfin_compression_mode);
         #ifdef FR3D_SERIAL_HOST_DISABLE_GM
@@ -1009,9 +1003,7 @@ void Config_RetrieveSettings(bool apply_standalone_hotend)
     {
         eeprom_read_mk3_payload(i);
         fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
-        fr3d_hall_cal_adc_170 = FR3D_HALL_CAL_ADC_170;
-        fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
-        fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
+        fr3d_hall_reset_cal();
         EEPROM_READ_VAR(i, sinfin_compression_mode);
         #ifdef FR3D_SERIAL_HOST_DISABLE_GM
         EEPROM_READ_VAR(i, fr3d_serial_filter_msgs);
@@ -1213,11 +1205,7 @@ void Config_ResetDefault()
  sensorRunoutMin = DEFAULT_SENSOR_RUNOUT_MIN;
  sensorRunoutMax = DEFAULT_SENSOR_RUNOUT_MAX;
  fr3d_hall_diameter_enabled = (uint8_t)FR3D_HALL_DIAMETER_ENABLE_DEFAULT;
- fr3d_hall_cal_adc_170 = FR3D_HALL_CAL_ADC_170;
- fr3d_hall_cal_adc_175 = FR3D_HALL_CAL_ADC_175;
- fr3d_hall_cal_adc_180 = FR3D_HALL_CAL_ADC_180;
- fr3d_hall_diam_offset_mm = FR3D_HALL_DIAM_OFFSET_MM_DEFAULT;
- fr3d_hall_pattern = (uint8_t)FR3D_HALL_PATTERN_DEFAULT;
+ fr3d_hall_reset_cal();
  fr3d_hall_cal_valid = (uint8_t)FR3D_HALL_CAL_VALID_DEFAULT;
  fr3d_hall_cal_mask = 0;
  fr3d_pred_enabled = (uint8_t)FR3D_PRED_ENABLE_DEFAULT;

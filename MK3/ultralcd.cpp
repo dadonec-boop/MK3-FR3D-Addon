@@ -1061,7 +1061,7 @@ static float lcd_hall_a3_read_raw_adc()
 #endif
 }
 
-static uint8_t lcd_hall_capture_point = 0; // 170, 175, 180 (x100)
+static uint8_t lcd_hall_capture_idx = 0;
 static float *lcd_hall_capture_dst = NULL;
 static int lcd_hall_offset_milli_edit = 0; // UI unico: -200..200 (paso 0.001 mm)
 
@@ -1158,12 +1158,15 @@ static void lcd_hall_capture_live_screen()
     if (lcd_hall_capture_dst != NULL)
       saved_adc = (int)((*lcd_hall_capture_dst) + 0.5f);
 
-    if (lcd_hall_capture_point == 170)
-      title = (fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? PSTR("Cal 1.70 C/S") : PSTR("Cal 1.50 C/S");
-    else if (lcd_hall_capture_point == 175)
-      title = (fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? PSTR("Cal 1.75 C/S") : PSTR("Cal 1.70 C/S");
-    else if (lcd_hall_capture_point == 180)
-      title = PSTR("Cal 2.00 C/S");
+    switch (lcd_hall_capture_idx)
+    {
+      case 0: title = PSTR("Cal 1.50 C/S"); break;
+      case 1: title = PSTR("Cal 1.60 C/S"); break;
+      case 2: title = PSTR("Cal 1.70 C/S"); break;
+      case 3: title = PSTR("Cal 1.80 C/S"); break;
+      case 4: title = PSTR("Cal 1.90 C/S"); break;
+      default: title = PSTR("Cal 2.00 C/S"); break;
+    }
 
     if (lcdDrawUpdate)
     {
@@ -1179,10 +1182,8 @@ static void lcd_hall_capture_live_screen()
     // Click = guardar valor ADC actual para el patron activo.
     if (ENCODER_CLICKED && lcd_hall_capture_dst != NULL)
     {
-      *lcd_hall_capture_dst = raw;
-      if (lcd_hall_capture_point == 170) fr3d_hall_note_point_saved(0);
-      else if (lcd_hall_capture_point == 175) fr3d_hall_note_point_saved(1);
-      else if (lcd_hall_capture_point == 180) fr3d_hall_note_point_saved(2);
+      *lcd_hall_capture_dst = fr3d_hall_adc_capture_avg();
+      fr3d_hall_note_point_saved(lcd_hall_capture_idx);
 #ifdef EEPROM_SETTINGS
       Config_StoreSettings();
 #endif
@@ -1202,10 +1203,11 @@ static void lcd_hall_capture_live_screen()
     }
 }
 
-static void lcd_hall_capture_170()
+static void lcd_hall_capture_open(uint8_t idx)
 {
-    lcd_hall_capture_point = 170;
-    lcd_hall_capture_dst = &fr3d_hall_cal_adc_170;
+    if (idx >= FR3D_HALL_CAL_N) idx = 0;
+    lcd_hall_capture_idx = idx;
+    lcd_hall_capture_dst = &fr3d_hall_cal_adc[idx];
     currentMenu = lcd_hall_capture_live_screen;
     encoderPosition = 0;
     lcd_hall_live_last_ms = 0;
@@ -1213,27 +1215,12 @@ static void lcd_hall_capture_170()
     lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
 }
 
-static void lcd_hall_capture_175()
-{
-    lcd_hall_capture_point = 175;
-    lcd_hall_capture_dst = &fr3d_hall_cal_adc_175;
-    currentMenu = lcd_hall_capture_live_screen;
-    encoderPosition = 0;
-    lcd_hall_live_last_ms = 0;
-    lcdDrawUpdate = 2;
-    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
-}
-
-static void lcd_hall_capture_180()
-{
-    lcd_hall_capture_point = 180;
-    lcd_hall_capture_dst = &fr3d_hall_cal_adc_180;
-    currentMenu = lcd_hall_capture_live_screen;
-    encoderPosition = 0;
-    lcd_hall_live_last_ms = 0;
-    lcdDrawUpdate = 2;
-    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
-}
+static void lcd_hall_capture_0() { lcd_hall_capture_open(0); }
+static void lcd_hall_capture_1() { lcd_hall_capture_open(1); }
+static void lcd_hall_capture_2() { lcd_hall_capture_open(2); }
+static void lcd_hall_capture_3() { lcd_hall_capture_open(3); }
+static void lcd_hall_capture_4() { lcd_hall_capture_open(4); }
+static void lcd_hall_capture_5() { lcd_hall_capture_open(5); }
 
 static void lcd_hall_open_calibrate_menu()
 {
@@ -1246,47 +1233,6 @@ static void lcd_hall_open_calibrate_menu()
 static void lcd_hall_now_info()
 {
     lcd_quick_feedback();
-}
-
-static void lcd_hall_pattern_need_calib_screen(void);
-
-static void lcd_hall_pattern_set_a()
-{
-    fr3d_hall_set_pattern(FR3D_HALL_PATTERN_A);
-    lcd_hall_store_settings();
-    lcd_quick_feedback();
-    currentMenu = lcd_hall_pattern_need_calib_screen;
-    encoderPosition = 0;
-    lcdDrawUpdate = 2;
-    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
-}
-
-static void lcd_hall_pattern_set_b()
-{
-    fr3d_hall_set_pattern(FR3D_HALL_PATTERN_B);
-    lcd_hall_store_settings();
-    lcd_quick_feedback();
-    currentMenu = lcd_hall_pattern_need_calib_screen;
-    encoderPosition = 0;
-    lcdDrawUpdate = 2;
-    lcd_arm_menu_timeout(LCD_TIMEOUT_TO_STATUS);
-}
-
-static void lcd_hall_pattern_menu()
-{
-    START_MENU();
-    MENU_ITEM(back, "Diameter Sensor", lcd_addonfr3d_hall_a3_menu);
-    if (fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
-    {
-      MENU_ITEM(function, "Now 1.7/1.75/2.0", lcd_hall_now_info);
-      MENU_ITEM(function, "Set 1.5/1.7/2.0", lcd_hall_pattern_set_a);
-    }
-    else
-    {
-      MENU_ITEM(function, "Now 1.5/1.7/2.0", lcd_hall_now_info);
-      MENU_ITEM(function, "Set 1.7/1.75/2.0", lcd_hall_pattern_set_b);
-    }
-    END_MENU();
 }
 
 #ifdef FR3D_CSV_TELEMETRY
@@ -1354,18 +1300,12 @@ static void lcd_hall_calibrate_menu()
 {
     START_MENU();
     MENU_ITEM(back, "Diameter Sensor", lcd_addonfr3d_hall_a3_menu);
-    if (fr3d_hall_pattern == FR3D_HALL_PATTERN_B)
-    {
-      MENU_ITEM(function, "Capture 1.70", lcd_hall_capture_170);
-      MENU_ITEM(function, "Capture 1.75", lcd_hall_capture_175);
-      MENU_ITEM(function, "Capture 2.00", lcd_hall_capture_180);
-    }
-    else
-    {
-      MENU_ITEM(function, "Capture 1.50", lcd_hall_capture_170);
-      MENU_ITEM(function, "Capture 1.70", lcd_hall_capture_175);
-      MENU_ITEM(function, "Capture 2.00", lcd_hall_capture_180);
-    }
+    MENU_ITEM(function, "Capture 1.50", lcd_hall_capture_0);
+    MENU_ITEM(function, "Capture 1.60", lcd_hall_capture_1);
+    MENU_ITEM(function, "Capture 1.70", lcd_hall_capture_2);
+    MENU_ITEM(function, "Capture 1.80", lcd_hall_capture_3);
+    MENU_ITEM(function, "Capture 1.90", lcd_hall_capture_4);
+    MENU_ITEM(function, "Capture 2.00", lcd_hall_capture_5);
     END_MENU();
 }
 
@@ -1390,7 +1330,7 @@ static void lcd_addonfr3d_hall_a3_menu()
     } else
 #endif
     {
-    MENU_ITEM(submenu, "Pattern Diameter", lcd_hall_pattern_menu);
+    MENU_ITEM(function, "6-pt 1.5-2.0", lcd_hall_now_info);
     if (fr3d_hall_cal_valid == 0)
       MENU_ITEM(function, "Need Calibrate!", lcd_hall_open_calibrate_menu);
     else
@@ -1644,7 +1584,7 @@ static void lcd_hall_pattern_need_calib_screen(void)
     {
         lcd_quick_feedback();
         encoderPosition = 0;
-        lcd_hall_capture_170();
+        lcd_hall_capture_open(0);
         return;
     }
 

@@ -345,21 +345,24 @@ debug notes:
 // FR3D Hall diameter path on A3: siempre habilitado (DH=1). Si no hay sensor, no se usa;
 // apagarlo por defecto dejaba el predictor en AO/AC y nadie se acordaba de reactivar DH.
 #define FR3D_HALL_DIAMETER_ENABLE_DEFAULT 1
-#define FR3D_HALL_CAL_ADC_170 500.0f
-#define FR3D_HALL_CAL_ADC_175 512.0f
-#define FR3D_HALL_CAL_ADC_180 524.0f
+#define FR3D_HALL_CAL_N 6
+#define FR3D_HALL_CAL_MASK_ALL 0x3Fu
+#define FR3D_HALL_CAL_ADC_DEFAULT_0 500.0f
+#define FR3D_HALL_CAL_ADC_DEFAULT_1 508.0f
+#define FR3D_HALL_CAL_ADC_DEFAULT_2 516.0f
+#define FR3D_HALL_CAL_ADC_DEFAULT_3 524.0f
+#define FR3D_HALL_CAL_ADC_DEFAULT_4 532.0f
+#define FR3D_HALL_CAL_ADC_DEFAULT_5 540.0f
 #define FR3D_HALL_DIAM_OFFSET_MM_DEFAULT 0.0f
-/* Pattern presets. D170/D175/D180 are legacy slot IDs (Lo/Mid/Hi), not fixed mm labels. */
-#define FR3D_HALL_PATTERN_A 0
-#define FR3D_HALL_PATTERN_B 1
-#define FR3D_HALL_PATTERN_DEFAULT FR3D_HALL_PATTERN_B
+/* Firmware nuevo: un solo patrón de 6 puntos. PAT A/B solo existe en MK3 viejo. */
+#define FR3D_HALL_PATTERN_SIX 6
 #define FR3D_HALL_CAL_VALID_DEFAULT 0
-#define FR3D_HALL_PAT_A_LO_MM 1.50f
-#define FR3D_HALL_PAT_A_MID_MM 1.70f
-#define FR3D_HALL_PAT_A_HI_MM 2.00f
-#define FR3D_HALL_PAT_B_LO_MM 1.70f
-#define FR3D_HALL_PAT_B_MID_MM 1.75f
-#define FR3D_HALL_PAT_B_HI_MM 2.00f
+#define FR3D_HALL_PAT_MM_0 1.50f
+#define FR3D_HALL_PAT_MM_1 1.60f
+#define FR3D_HALL_PAT_MM_2 1.70f
+#define FR3D_HALL_PAT_MM_3 1.80f
+#define FR3D_HALL_PAT_MM_4 1.90f
+#define FR3D_HALL_PAT_MM_5 2.00f
 
 // Predictor diameter (host/MK3 shared model; defaults aligned with Python tuned profile).
 #define FR3D_PRED_ENABLE_DEFAULT 1         // predictor enabled

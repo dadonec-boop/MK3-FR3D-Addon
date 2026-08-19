@@ -983,29 +983,36 @@ static void fr3d_predictor_apply_10s(void)
 
 static float fr3d_hall_adc_to_mm(float adc)
 {
-  const float x1 = fr3d_hall_cal_adc_170;
-  const float x2 = fr3d_hall_cal_adc_175;
-  const float x3 = fr3d_hall_cal_adc_180;
-  const float y1 = fr3d_hall_pattern_mm(0);
-  const float y2 = fr3d_hall_pattern_mm(1);
-  const float y3 = fr3d_hall_pattern_mm(2);
+  const float *x = fr3d_hall_cal_adc;
 
-  auto lerp_mm = [](float x, float xa, float xb, float ya, float yb) -> float
+  auto lerp_mm = [](float xv, float xa, float xb, float ya, float yb) -> float
   {
     const float den = (xb - xa);
     if (den == 0.0f) return ya;
-    return ya + (x - xa) * ((yb - ya) / den);
+    return ya + (xv - xa) * ((yb - ya) / den);
   };
 
-  // Handle both monotonic directions:
-  // - adc increasing with diameter: x1 < x2 < x3
-  // - adc decreasing with diameter: x1 > x2 > x3
-  const bool first_segment = ((x1 <= x2) && (adc <= x2)) || ((x1 >= x2) && (adc >= x2));
-  if (first_segment)
+  const bool increasing = x[0] < x[FR3D_HALL_CAL_N - 1];
+  uint8_t i;
+  for (i = 0; i < (FR3D_HALL_CAL_N - 1); i++)
   {
-    return lerp_mm(adc, x1, x2, y1, y2);
+    const float xa = x[i];
+    const float xb = x[i + 1];
+    const float ya = fr3d_hall_pattern_mm(i);
+    const float yb = fr3d_hall_pattern_mm((uint8_t)(i + 1));
+    const bool last = (i == (FR3D_HALL_CAL_N - 2));
+    if (increasing)
+    {
+      if (adc <= xb || last)
+        return lerp_mm(adc, xa, xb, ya, yb);
+    }
+    else
+    {
+      if (adc >= xb || last)
+        return lerp_mm(adc, xa, xb, ya, yb);
+    }
   }
-  return lerp_mm(adc, x2, x3, y2, y3);
+  return fr3d_hall_pattern_mm(2);
 }
 
 static float fr3d_read_hall_diameter_mm(void)

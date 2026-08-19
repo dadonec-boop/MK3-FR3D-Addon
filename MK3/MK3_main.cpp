@@ -1876,6 +1876,45 @@ float fr3d_hall_adc_read_now()
 #endif
 }
 
+float fr3d_hall_adc_capture_avg(void)
+{
+  const uint8_t n = 16;
+  uint32_t sum = 0;
+  uint8_t i;
+  for (i = 0; i < n; i++) {
+    sum += (uint32_t)(fr3d_hall_adc_read_now() + 0.5f);
+    delay(1);
+    watchdog_reset();
+  }
+  return (float)sum / (float)n;
+}
+
+static int8_t fr3d_hall_slot_from_mmx100(int mmx100)
+{
+  switch (mmx100) {
+    case 150: return 0;
+    case 160: return 1;
+    case 170: return 2;
+    case 180: return 3;
+    case 190: return 4;
+    case 200: return 5;
+    default: return -1;
+  }
+}
+
+/* -2 = no es Dxxx/Cxxx; -1 = punto inválido (p. ej. D175). */
+static int8_t fr3d_hall_parse_slot_prefix(const char *p, char kind)
+{
+  if (fr3d_uc(p[0]) != kind) return -2;
+  char a = fr3d_uc(p[1]);
+  char b = fr3d_uc(p[2]);
+  char c = fr3d_uc(p[3]);
+  if (a < '0' || a > '9' || b < '0' || b > '9' || c < '0' || c > '9')
+    return -2;
+  int n = (a - '0') * 100 + (b - '0') * 10 + (c - '0');
+  return fr3d_hall_slot_from_mmx100(n);
+}
+
 #ifdef FR3D_CSV_TELEMETRY
 static bool fr3d_reject_hall_if_usb(void)
 {
@@ -1948,21 +1987,15 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHOLNPGM(" SWMIN<mm> umbral minimo sensor (0.0-7.55)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" SWMAX<mm> umbral maximo sensor (0.0-7.55)");
-    SERIAL_ECHOLNPGM(" D170<adc> calibracion slot Lo (patron segun PAT A/B)");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" D175<adc> calibracion slot Mid");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" D180<adc> calibracion slot Hi");
+    SERIAL_ECHOLNPGM(" D150/D160/D170/D180/D190/D200<adc> cal 6 puntos A3");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" DOFF<mm> offset diametro Hall A3 (-0.20..0.20)");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" HPATA/HPATB preset patrones A(1.5/1.7/2.0) B(1.7/1.75/2.0); invalida CALV");
+    SERIAL_ECHOLNPGM(" CALV1 reactiva CALV si hay 6 ADC monótonos (tras flash)");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" CALV1 reactiva CALV si hay 3 ADC guardados (tras flash)");
+    SERIAL_ECHOLNPGM(" C150/C160/C170/C180/C190/C200 capturar ADC A3 (promedio)");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" C170/C175/C180 capturar ADC actual A3 para patron");
-    SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" QUERY incluye PAT,CALV,A3,<adc>; DLCD,<mm> diametro LCD (D)");
+    SERIAL_ECHOLNPGM(" QUERY incluye CALN,6 PAT,6 CALV D150..D200 A3 DLCD");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" DIAMQ solo DLCD (diametro LCD campo D)");
     SERIAL_ECHO_START;
@@ -2081,11 +2114,15 @@ static bool process_fr3d_compact_line()
     } else
 #endif
     { SERIAL_ECHO_START; SERIAL_ECHOPGM("A3,"); SERIAL_ECHO(fr3d_hall_adc_read_now()); SERIAL_ECHOLNPGM(","); }
-    SERIAL_ECHO_START; SERIAL_ECHOPGM("PAT,"); SERIAL_ECHO((fr3d_hall_pattern == FR3D_HALL_PATTERN_B) ? 'B' : 'A'); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("CALN,"); SERIAL_ECHO((int)FR3D_HALL_CAL_N); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("PAT,"); SERIAL_ECHO((int)FR3D_HALL_PATTERN_SIX); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("CALV,"); SERIAL_ECHO((int)fr3d_hall_cal_valid); SERIAL_ECHOLNPGM(",");
-    SERIAL_ECHO_START; SERIAL_ECHOPGM("D170,"); SERIAL_ECHO(fr3d_hall_cal_adc_170); SERIAL_ECHOLNPGM(",");
-    SERIAL_ECHO_START; SERIAL_ECHOPGM("D175,"); SERIAL_ECHO(fr3d_hall_cal_adc_175); SERIAL_ECHOLNPGM(",");
-    SERIAL_ECHO_START; SERIAL_ECHOPGM("D180,"); SERIAL_ECHO(fr3d_hall_cal_adc_180); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D150,"); SERIAL_ECHO(fr3d_hall_cal_adc[0]); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D160,"); SERIAL_ECHO(fr3d_hall_cal_adc[1]); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D170,"); SERIAL_ECHO(fr3d_hall_cal_adc[2]); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D180,"); SERIAL_ECHO(fr3d_hall_cal_adc[3]); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D190,"); SERIAL_ECHO(fr3d_hall_cal_adc[4]); SERIAL_ECHOLNPGM(",");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("D200,"); SERIAL_ECHO(fr3d_hall_cal_adc[5]); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("DOFF,"); SERIAL_PROTOCOL_F(fr3d_hall_diam_offset_mm, 3); SERIAL_ECHOLNPGM(",");
 #ifdef FR3D_CSV_TELEMETRY
     fr3d_diam_poll_samples();
@@ -2905,120 +2942,6 @@ static bool process_fr3d_compact_line()
     return true;
   }
 
-  if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '0') {
-    if (fr3d_reject_hall_if_usb()) return true;
-    char *q = p + 4;
-    while (*q == ' ' || *q == '\t') q++;
-    if (*q == '\0') {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D170 empty");
-      return true;
-    }
-    char *endp = NULL;
-    float vf = (float)strtod(q, &endp);
-    if (endp == q) {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D170 parse");
-      return true;
-    }
-    while (*endp == ' ' || *endp == '\t') endp++;
-    if (*endp != '\0') {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D170 extra");
-      return true;
-    }
-    if (vf < 0.0f) vf = 0.0f;
-    if (vf > 1023.0f) vf = 1023.0f;
-    fr3d_hall_cal_adc_170 = vf;
-    fr3d_hall_note_point_saved(0);
-#ifdef EEPROM_SETTINGS
-    Config_StoreSettings();
-#endif
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPGM("ok D170 ");
-    SERIAL_ECHOLN(fr3d_hall_cal_adc_170);
-    return true;
-  }
-
-  if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '5') {
-    if (fr3d_reject_hall_if_usb()) return true;
-    char *q = p + 4;
-    while (*q == ' ' || *q == '\t') q++;
-    if (*q == '\0') {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D175 empty");
-      return true;
-    }
-    char *endp = NULL;
-    float vf = (float)strtod(q, &endp);
-    if (endp == q) {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D175 parse");
-      return true;
-    }
-    while (*endp == ' ' || *endp == '\t') endp++;
-    if (*endp != '\0') {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D175 extra");
-      return true;
-    }
-    if (vf < 0.0f) vf = 0.0f;
-    if (vf > 1023.0f) vf = 1023.0f;
-    fr3d_hall_cal_adc_175 = vf;
-    fr3d_hall_note_point_saved(1);
-#ifdef EEPROM_SETTINGS
-    Config_StoreSettings();
-#endif
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPGM("ok D175 ");
-    SERIAL_ECHOLN(fr3d_hall_cal_adc_175);
-    return true;
-  }
-
-  if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '8' && fr3d_uc(p[3]) == '0') {
-    if (fr3d_reject_hall_if_usb()) return true;
-    char *q = p + 4;
-    while (*q == ' ' || *q == '\t') q++;
-    if (*q == '\0') {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D180 empty");
-      return true;
-    }
-    char *endp = NULL;
-    float vf = (float)strtod(q, &endp);
-    if (endp == q) {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D180 parse");
-      return true;
-    }
-    while (*endp == ' ' || *endp == '\t') endp++;
-    if (*endp != '\0') {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err D180 extra");
-      return true;
-    }
-    if (vf < 0.0f) vf = 0.0f;
-    if (vf > 1023.0f) vf = 1023.0f;
-    fr3d_hall_cal_adc_180 = vf;
-    fr3d_hall_note_point_saved(2);
-#ifdef EEPROM_SETTINGS
-    Config_StoreSettings();
-#endif
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPGM("ok D180 ");
-    SERIAL_ECHOLN(fr3d_hall_cal_adc_180);
-    return true;
-  }
-
   if (fr3d_uc(p[0]) == 'D' && fr3d_uc(p[1]) == 'O' && fr3d_uc(p[2]) == 'F' && fr3d_uc(p[3]) == 'F') {
     if (fr3d_reject_hall_if_usb()) return true;
     char *q = p + 4;
@@ -3057,93 +2980,95 @@ static bool process_fr3d_compact_line()
     return true;
   }
 
-  if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '0') {
-    if (fr3d_reject_hall_if_usb()) return true;
-    char *q = p + 4;
-    while (*q == ' ' || *q == '\t') q++;
-    if (*q != '\0') {
-      fr3d_compact_last_error = true;
+  {
+    const int8_t slot = fr3d_hall_parse_slot_prefix(p, 'D');
+    if (slot != -2) {
+      if (fr3d_reject_hall_if_usb()) return true;
+      if (slot < 0) {
+        fr3d_compact_last_error = true;
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("err Dxxx use D150/D160/D170/D180/D190/D200");
+        return true;
+      }
+      char *q = p + 4;
+      while (*q == ' ' || *q == '\t') q++;
+      if (*q == '\0') {
+        fr3d_compact_last_error = true;
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("err Dxxx empty");
+        return true;
+      }
+      char *endp = NULL;
+      float vf = (float)strtod(q, &endp);
+      if (endp == q) {
+        fr3d_compact_last_error = true;
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("err Dxxx parse");
+        return true;
+      }
+      while (*endp == ' ' || *endp == '\t') endp++;
+      if (*endp != '\0') {
+        fr3d_compact_last_error = true;
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("err Dxxx extra");
+        return true;
+      }
+      if (vf < 0.0f) vf = 0.0f;
+      if (vf > 1023.0f) vf = 1023.0f;
+      fr3d_hall_cal_adc[slot] = vf;
+      fr3d_hall_note_point_saved((uint8_t)slot);
+#ifdef EEPROM_SETTINGS
+      Config_StoreSettings();
+#endif
       SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err C170 extra");
+      SERIAL_ECHOPGM("ok D");
+      SERIAL_ECHO((int)(150 + (int)slot * 10));
+      SERIAL_ECHOPGM(" ");
+      SERIAL_ECHOLN(fr3d_hall_cal_adc[slot]);
       return true;
     }
-    fr3d_hall_cal_adc_170 = fr3d_hall_adc_read_now();
-    fr3d_hall_note_point_saved(0);
-#ifdef EEPROM_SETTINGS
-    Config_StoreSettings();
-#endif
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPGM("ok C170 ");
-    SERIAL_ECHOLN(fr3d_hall_cal_adc_170);
-    return true;
   }
 
-  if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '7' && fr3d_uc(p[3]) == '5') {
-    if (fr3d_reject_hall_if_usb()) return true;
-    char *q = p + 4;
-    while (*q == ' ' || *q == '\t') q++;
-    if (*q != '\0') {
-      fr3d_compact_last_error = true;
+  {
+    const int8_t slot = fr3d_hall_parse_slot_prefix(p, 'C');
+    if (slot != -2) {
+      if (fr3d_reject_hall_if_usb()) return true;
+      if (slot < 0) {
+        fr3d_compact_last_error = true;
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("err Cxxx use C150/C160/C170/C180/C190/C200");
+        return true;
+      }
+      char *q = p + 4;
+      while (*q == ' ' || *q == '\t') q++;
+      if (*q != '\0') {
+        fr3d_compact_last_error = true;
+        SERIAL_ECHO_START;
+        SERIAL_ECHOLNPGM("err Cxxx extra");
+        return true;
+      }
+      fr3d_hall_cal_adc[slot] = fr3d_hall_adc_capture_avg();
+      fr3d_hall_note_point_saved((uint8_t)slot);
+#ifdef EEPROM_SETTINGS
+      Config_StoreSettings();
+#endif
       SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err C175 extra");
+      SERIAL_ECHOPGM("ok C");
+      SERIAL_ECHO((int)(150 + (int)slot * 10));
+      SERIAL_ECHOPGM(" ");
+      SERIAL_ECHOLN(fr3d_hall_cal_adc[slot]);
       return true;
     }
-    fr3d_hall_cal_adc_175 = fr3d_hall_adc_read_now();
-    fr3d_hall_note_point_saved(1);
-#ifdef EEPROM_SETTINGS
-    Config_StoreSettings();
-#endif
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPGM("ok C175 ");
-    SERIAL_ECHOLN(fr3d_hall_cal_adc_175);
-    return true;
-  }
-
-  if (fr3d_uc(p[0]) == 'C' && fr3d_uc(p[1]) == '1' && fr3d_uc(p[2]) == '8' && fr3d_uc(p[3]) == '0') {
-    if (fr3d_reject_hall_if_usb()) return true;
-    char *q = p + 4;
-    while (*q == ' ' || *q == '\t') q++;
-    if (*q != '\0') {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err C180 extra");
-      return true;
-    }
-    fr3d_hall_cal_adc_180 = fr3d_hall_adc_read_now();
-    fr3d_hall_note_point_saved(2);
-#ifdef EEPROM_SETTINGS
-    Config_StoreSettings();
-#endif
-    SERIAL_ECHO_START;
-    SERIAL_ECHOPGM("ok C180 ");
-    SERIAL_ECHOLN(fr3d_hall_cal_adc_180);
-    return true;
   }
 
   if (fr3d_cmd_prefix(p, "HPAT")) {
-    if (fr3d_reject_hall_if_usb()) return true;
-    char *q = p + 4;
-    while (*q == ' ' || *q == '\t') q++;
-    char ch = fr3d_uc(*q);
-    if ((ch != 'A' && ch != 'B') || (q[1] != '\0' && q[1] != ' ' && q[1] != '\t')) {
-      fr3d_compact_last_error = true;
-      SERIAL_ECHO_START;
-      SERIAL_ECHOLNPGM("err HPAT use HPATA or HPATB");
-      return true;
-    }
-    fr3d_hall_set_pattern((ch == 'B') ? FR3D_HALL_PATTERN_B : FR3D_HALL_PATTERN_A);
-#ifdef EEPROM_SETTINGS
-    Config_StoreSettings();
-#endif
+    fr3d_compact_last_error = true;
     SERIAL_ECHO_START;
-    SERIAL_ECHOPGM("ok HPAT ");
-    SERIAL_ECHO(ch);
-    SERIAL_ECHOPGM(" CALV=");
-    SERIAL_ECHOLN((int)fr3d_hall_cal_valid);
+    SERIAL_ECHOLNPGM("err HPAT 6-point only");
     return true;
   }
 
-  /* CALV1 — reactivar flag si hay 3 ADC guardados (tras flash / CALV perdido). */
+  /* CALV1 — reactivar flag si hay 6 ADC monótonos (tras flash / CALV perdido). */
   if (fr3d_cmd_word(p, "CALV1")) {
     if (fr3d_reject_hall_if_usb()) return true;
     char *r = p + 5;
