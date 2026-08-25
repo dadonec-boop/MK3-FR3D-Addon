@@ -19,7 +19,7 @@ extern char fr3d_pred_ui_last_axis_char;
 extern char fr3d_pred_ui_last_sign_char;
 extern uint8_t fr3d_pred_ui_last_value_valid;
 extern float fr3d_pred_ui_last_value;
-/** Imprime echo:PREDUI,<token>, (SIN A | A | AH | AB | AP | AU | AZ | AE± | AT±). */
+/** Imprime echo:PREDUI,<token>, (SIN A | AR | A | AH | AB | AP | AU | AZ | AE± | AT±). */
 void fr3d_pred_ui_print_token(void);
 /** STOP/pausa: Optimizar OFF y limpia ventana E→P / freeze. */
 void fr3d_pred_on_extrude_stop(void);

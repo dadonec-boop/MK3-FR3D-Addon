@@ -2001,7 +2001,7 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" DIAMSRC<0|1|2> 0=A3 1=USB 2=MANUAL (EEPROM)");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" DIAMSET<mm> diametro HOST (stale 5s)");
+    SERIAL_ECHOLNPGM(" DIAMSET<mm> diametro HOST (USB stale 5s; Manual: 70s→PREDTGT si Auto ON=AR)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" PREDQ estado predictor (enable/mode/parametros)");
     SERIAL_ECHO_START;

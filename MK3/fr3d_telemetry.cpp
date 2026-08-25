@@ -33,13 +33,16 @@ uint8_t fr3d_diam_src = 0; /* 0=A3 1=USB 2=MANUAL */
 #define FR3D_HOST_DIAM_STALE_MS 5000UL
 static float fr3d_host_diam_mm = 1.75f;
 static unsigned long fr3d_host_diam_ms = 0;
+/* 1 = Manual asumió PREDTGT tras 70 s sin nuevo ingreso (Auto ON). PREDUI=AR. */
+static uint8_t fr3d_manual_assumed_target = 0;
 
 static void fr3d_diam_window_reset(float seed_value, unsigned long now);
 static uint8_t fr3d_diam_for_pred(float *d_mean, float *d_span);
+static void fr3d_manual_diam_assume_target_tick(void);
 
 uint8_t fr3d_diam_host_fresh(void)
 {
-  if (fr3d_diam_src == 2) return 1; /* Manual: Ø local, no caduca */
+  if (fr3d_diam_src == 2) return 1; /* Manual: Ø local (o asumido a target); no stale USB */
   if (fr3d_diam_src != 1) return 0;
   if (fr3d_host_diam_ms == 0UL) return 0;
   return ((unsigned long)(millis() - fr3d_host_diam_ms) <= FR3D_HOST_DIAM_STALE_MS) ? 1 : 0;
@@ -57,6 +60,7 @@ void fr3d_diam_host_set(float mm)
   const float prev = fr3d_host_diam_mm;
   fr3d_host_diam_mm = mm;
   fr3d_host_diam_ms = millis();
+  fr3d_manual_assumed_target = 0; /* ingreso operador / DIAMSET / LCD */
   /* Manual: el Ø es el calibre del operador. Vaciar FIFO Hall/USB viejo. */
   if (fr3d_diam_src == 2) {
     float d = mm - prev;
@@ -71,6 +75,8 @@ void fr3d_diam_src_set(uint8_t src)
   if (src > 2) src = 0;
   const uint8_t prev = fr3d_diam_src;
   fr3d_diam_src = src;
+  if (fr3d_diam_src != 2)
+    fr3d_manual_assumed_target = 0;
   if (fr3d_diam_src == 0)
     fr3d_host_diam_ms = 0UL;
   else if (fr3d_diam_src == 2 && fr3d_host_diam_ms == 0UL)
@@ -79,6 +85,40 @@ void fr3d_diam_src_set(uint8_t src)
     const float seed = (fr3d_diam_src == 0) ? 1.75f : fr3d_host_diam_mm;
     fr3d_diam_window_reset(seed, millis());
   }
+}
+
+/* Opción A (flujo operativo): Manual + Auto ON + ≥70 s sin nuevo Ø → asumir PREDTGT.
+ * Manual solo aporta al lazo cuando Auto actúa; si no hay nueva medida, se asume objetivo. */
+static void fr3d_manual_diam_assume_target_tick(void)
+{
+  if (fr3d_diam_src != 2) {
+    fr3d_manual_assumed_target = 0;
+    return;
+  }
+  /* Solo con Predictor Auto ON: con Auto OFF el predictor no actúa. */
+  if (fr3d_pred_enabled == 0 || fr3d_pred_mode == 0) {
+    fr3d_manual_assumed_target = 0;
+    return;
+  }
+  if (fr3d_host_diam_ms == 0UL)
+    return;
+  if ((unsigned long)(millis() - fr3d_host_diam_ms) < FR3D_MANUAL_DIAM_ASSUME_TARGET_MS)
+    return;
+
+  float tgt = fr3d_pred_target_diam_mm;
+  if (tgt < 1.20f) tgt = 1.20f;
+  if (tgt > 2.80f) tgt = 2.80f;
+
+  float d = fr3d_host_diam_mm - tgt;
+  if (d < 0.0f) d = -d;
+  if (d < 0.0005f)
+    return; /* ya es el objetivo: no reenviar */
+
+  /* Aplicar sin pasar por fr3d_diam_host_set (ese limpia el flag AR). */
+  fr3d_host_diam_mm = tgt;
+  fr3d_host_diam_ms = millis();
+  fr3d_diam_window_reset(tgt, millis());
+  fr3d_manual_assumed_target = 1;
 }
 
 #define FR3D_DIAM_SAMPLE_MS 500UL
@@ -351,10 +391,13 @@ static void fr3d_pred_ui_set(char mode_c, bool changed_r, bool changed_t, float 
 
 void fr3d_pred_ui_print_token(void)
 {
-  /* echo:PREDUI,<token>,  — SIN A|A|AH|AB|AS|AC|AO|AG|AN|AP|AU|AZ|AE±|AT± */
+  /* echo:PREDUI,<token>,  — SIN A|AR|A|AH|AB|AS|AC|AO|AG|AN|AP|AU|AZ|AE±|AT± */
   SERIAL_ECHO_START;
   SERIAL_ECHOPGM("PREDUI,");
-  if (fr3d_pred_enabled == 0 || fr3d_pred_mode == 0) {
+  if (fr3d_manual_assumed_target && fr3d_diam_src == 2 && fr3d_pred_mode != 0 && fr3d_pred_enabled != 0) {
+    /* Manual Ø asumió PREDTGT (70 s sin ingreso, Auto ON). */
+    SERIAL_ECHOPGM("AR");
+  } else if (fr3d_pred_enabled == 0 || fr3d_pred_mode == 0) {
     SERIAL_ECHOPGM("SIN A");
   } else {
     const char a0 = fr3d_pred_ui_adjust_char_0;
@@ -1389,6 +1432,7 @@ void fr3d_csv_telemetry_poll(void)
   const unsigned long now = millis();
   // Keep LCD predictor tail aligned with current setpoints (not only 10 s CSV ticks).
   fr3d_pred_ui_track_adjust_from_setpoints();
+  fr3d_manual_diam_assume_target_tick();
 
   if (!fr3d_csv_inited)
   {

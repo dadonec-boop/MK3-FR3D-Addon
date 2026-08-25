@@ -369,6 +369,8 @@ debug notes:
 #define FR3D_PRED_MODE_DEFAULT 0           // 0=manual suggest, 1=automatic apply
 #define FR3D_PRED_WINDOW_SIZE_DEFAULT 3
 #define FR3D_PRED_TARGET_DIAM_MM_DEFAULT 1.75f
+/* Manual Ø (DIAMSRC=2) + Predictor Auto ON: sin nuevo ingreso en este tiempo → asumir PREDTGT (token AR). */
+#define FR3D_MANUAL_DIAM_ASSUME_TARGET_MS 70000UL
 #define FR3D_PRED_DEADBAND_HALF_MM_DEFAULT 0.035f
 #define FR3D_PRED_TEMP_MATCH_MAX_C_DEFAULT 2.0f
 #define FR3D_PRED_R_MIN_DEFAULT 14.0f
