@@ -7,7 +7,10 @@ Based on **MACKEREL** (Marlin-derived filament extruder firmware by Filip Mulier
 You can use this firmware in two ways:
 
 1. **Standalone** — MK3S+ with FR3D Addon from the machine LCD (no Raspberry Pi gateway / web app required)
-2. **Internet and/or LAN** — optional Raspberry Pi Zero 2 W **or** Windows PC gateway + the same web app, over the internet or on local WiFi (with or without internet) ([fr3d-addon.web.app](http://fr3d-addon.web.app/))
+2. **Internet and/or LAN** — optional gateway + the same web app, over the internet or on local WiFi (with or without internet) ([fr3d-addon.web.app](http://fr3d-addon.web.app/))
+   - **Raspberry Pi Zero 2 W** — compact totem; analog diameter sensor on MK3 pin **A3** (Hall / ARTME 3D optical)
+   - **Raspberry Pi 3B** — full USB host; analog **A3** *or* **BDWidth** laser diameter sensor (USB on the Pi)
+   - **Windows PC** — dedicated notebook/PC next to the extruder (`FR3DGateway.exe`)
 
 ---
 
@@ -20,14 +23,17 @@ You can use this firmware in two ways:
 | [`docs/USER_GUIDE_...pdf`](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf) | Standalone user guide (sensor, LCD, predictor operation) |
 | [`docs/ayuda_fr3d_es_revision.docx`](docs/ayuda_fr3d_es_revision.docx) | Web app in-app help — Spanish review export (106 topics; live help at [fr3d-addon.web.app](https://fr3d-addon.web.app/)) |
 | [`docs/diameter_sensor_infidel/`](docs/diameter_sensor_infidel/) | Printable Hall-effect (INFIDEL-style) diameter-sensor parts (STL) |
-| [Pi gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8) | Optional Raspberry Pi Zero 2 W factory image (binary only, see Releases) |
+| [Pi Zero 2 W gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8) | Optional **Raspberry Pi Zero 2 W** factory image — analog A3, compact totem (binary only) |
+| [Pi 3B gateway image (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-pi3b-v0.9) | Optional **Raspberry Pi 3B** factory image — analog A3 **or** BDWidth USB digital diameter (binary only) |
+| [BDWidth sensor (PandaPi)](https://www.pandapi3d.com/product-page/bdwidth-sensor) | Optional contactless laser diameter sensor for use with **Pi 3B** gateway (USB-C to the Pi) |
 | [Windows gateway (Release)](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/latest) | Optional Windows PC gateway package (`FR3DGateway-windows-x64.zip` — **exe binary only**) |
 | Tag `v-mk3-original` | Stock MK3 (Mackerel base), **without** FR3D Addon |
 | Tag `v-mk3-fr3d` / branch `main` | Latest **MK3 + FR3D Addon** |
 
 This repository publishes **MK3 board firmware** (GPL-3.0) and, via **GitHub Releases**, **binary-only** gateway packages:
 
-- Raspberry Pi Zero 2 W **factory SD image**
+- Raspberry Pi Zero 2 W **factory SD image** (analog A3)
+- Raspberry Pi 3B **factory SD image** (analog A3 or BDWidth USB)
 - Windows **FR3DGateway.exe** package (dedicated PC/notebook next to the extruder)
 
 **Gateway Python source, Pi program OTA source zips, and the web app source are not published** in this repository or its Releases.
@@ -38,7 +44,7 @@ This repository publishes **MK3 board firmware** (GPL-3.0) and, via **GitHub Rel
 
 Compared with original MK3, this firmware includes:
 
-- Diameter measurement (Hall / optical) with LCD **6-point** Analog A3 calibration (1.50…2.00 mm)
+- Diameter measurement — **Analog A3** (Hall / optical) with LCD **6-point** calibration (1.50…2.00 mm), or **Digital USB** (BDWidth via Pi 3B gateway)
 - Diameter **predictor** with **Auto On / Off** (automatic E/T apply vs suggest-only); **Optimizar** sets P* by acting on E+T while puller stays in Auto
 - Predictor parameter menus (basic + Advanced)
 - Host serial temperature setpoint (`T` / `RTFP`) capped dynamically at **max(190 °C, predictor Tmax + 5)**, with heater safety headroom (see CHANGELOG)
@@ -91,24 +97,41 @@ This is an **optional** path. Standalone LCD operation above does **not** requir
 
 This firmware is **prepared** for remote and local control when used with the **MK3s + FR3D Addon** product stack:
 
-- A **Raspberry Pi Zero 2 W** (or a Windows PC) acts as a gateway between the MK3 (USB/serial) and the network
-- The **same web app** can run over the **internet** or on the **local LAN / WiFi**, with or without an internet connection
+- Choose **one** gateway host next to the MK3: **Pi Zero 2 W**, **Pi 3B**, or **Windows PC**
+- The **same web app** runs over the **internet** or on the **local LAN / WiFi**, with or without an internet connection
 - Operational reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/) (cloud) or `http://<Pi-IP>/` on the same WiFi (LAN)
 
 The web app / host stack is an **additional product feature** and is **not** published here as open-source.
 
-A **prebuilt SD image** for the Pi Zero 2 W gateway is available for download under [Releases](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases) (image file only).
+Prebuilt **SD images** for both Pi gateways are available under [Releases](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases) (image files only).
+
+### Which Raspberry Pi should I use?
+
+| Gateway | Best for | Diameter sensor |
+|---------|----------|-----------------|
+| **Pi Zero 2 W** | Smallest totem on the extruder | Analog **A3** only (Hall INFIDEL or ARTME 3D optical on the MK3) |
+| **Pi 3B** | BDWidth digital diameter or analog A3 with full USB ports | Analog **A3** *or* **[BDWidth](https://www.pandapi3d.com/product-page/bdwidth-sensor)** laser sensor (USB-C on the Pi) |
+| **Windows PC** | Reuse an existing PC | Analog **A3** (sensor wired to the MK3 Mega) |
+
+**BDWidth** is an optical width/motion sensor (PandaPi). Purchase: [pandapi3d.com — bdwidth sensor](https://www.pandapi3d.com/product-page/bdwidth-sensor).  
+It connects to a **Pi 3B USB port** (USB-C cable included). The Pi Zero 2 W has **no USB host** for an extra sensor — use Pi 3B for BDWidth.
+
+On Pi 3B with both devices connected, **any two USB-A ports** work. The gateway identifies the MK3 serial link (250000 baud, saved in config) and auto-detects BDWidth (500000 baud, PandaPi `pandapi3dV` probe) — you do not assign a fixed physical port number.
 
 ---
 
 ## Download Raspberry Pi Zero 2 W gateway image
+
+Recommended when you use an **analog diameter sensor on MK3 pin A3** and want the smallest gateway totem.
 
 Download the factory image from the Release:
 
 - **[fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)**  
   Release notes: [pi-gateway-v0.8](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-v0.8)
 
-After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY latest` (currently **2.4.15**). That does **not** replace the SD image.
+**Wiring (summary):** micro SD, **+5 V 2 A** on **PWR_IN**, **USB OTG** data port → MK3S+ USB-B (printer port).
+
+After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY latest`. That does **not** replace the SD image.
 
 ### Flash with Raspberry Pi Imager
 
@@ -118,7 +141,33 @@ After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY lat
 4. **Choose storage** → your SD card → **Write**.
 5. Insert the SD into the Pi Zero 2 W and power on.
 
-### First boot / factory defaults
+---
+
+## Download Raspberry Pi 3B gateway image (+ BDWidth)
+
+Recommended when you use the **[BDWidth](https://www.pandapi3d.com/product-page/bdwidth-sensor)** contactless laser diameter sensor, or when you want analog A3 with a full-size Pi and multiple USB ports.
+
+Download the factory image from the Release:
+
+- **[fr3daddon-pi3b-v0.9-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-pi3b-v0.9/fr3daddon-pi3b-v0.9-small.img.zst)**  
+  Release notes: [pi-gateway-pi3b-v0.9](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/tag/pi-gateway-pi3b-v0.9)
+
+**Wiring (summary):**
+
+- micro SD + **+5 V** power (micro USB)
+- **MK3S+ USB-B** → any Pi 3B **USB-A** port (FR3D serial link to the Mega)
+- **BDWidth USB-C** → another Pi 3B **USB-A** port (digital diameter; gateway auto-detects the sensor)
+- On the MK3 LCD set **Diameter Sensor → Source → Digital USB** when using BDWidth
+
+After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY latest`. That does **not** replace the SD image.
+
+### Flash with Raspberry Pi Imager
+
+Same steps as Pi Zero 2 W, but select `fr3daddon-pi3b-v0.9-small.img.zst` and boot on a **Raspberry Pi 3B**.
+
+---
+
+## First boot / factory defaults (Pi Zero 2 W and Pi 3B)
 
 - WiFi hotspot: **SSID `addonfr3d`** / password **`addonfr3d`**
 - On the MK3S+ LCD open **Control → gateway FR3D**. That screen shows the web app URL, WiFi SSID, the gateway **IP** (with online status), and the pairing **Token**:
@@ -142,7 +191,7 @@ After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY lat
 - **Internet control stack (web app + gateway source):**  
   **not** included in this repository and **not** licensed here as public open-source software.
 
-- **Pi Zero 2 W factory image (Release asset):** distributed as a binary image for end users; gateway source code is not published in this repository.
+- **Pi Zero 2 W and Pi 3B factory images (Release assets):** distributed as binary images for end users; gateway source code is not published in this repository.
 
 ---
 
@@ -150,7 +199,9 @@ After first boot, update the gateway program with CONSOLE `PI UPDATE GATEWAY lat
 
 - Firmware ZIP (Arduino IDE): [dist/MK3-FR3D-Addon.zip](dist/MK3-FR3D-Addon.zip)
 - Standalone user guide (PDF): [docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf](docs/USER_GUIDE_FR3D_MK3_EN_ch1-2-3-4-5.pdf)
-- Pi gateway image: [fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)
+- Pi Zero 2 W gateway image: [fr3daddon-v0.8-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-v0.8/fr3daddon-v0.8-small.img.zst)
+- Pi 3B gateway image: [fr3daddon-pi3b-v0.9-small.img.zst](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/download/pi-gateway-pi3b-v0.9/fr3daddon-pi3b-v0.9-small.img.zst)
+- BDWidth sensor (purchase): [pandapi3d.com — bdwidth](https://www.pandapi3d.com/product-page/bdwidth-sensor)
 - Gateway program (Pi OTA + Windows): [latest Release](https://github.com/dadonec-boop/MK3-FR3D-Addon/releases/latest)
 - System / web app reference: [http://fr3d-addon.web.app/](http://fr3d-addon.web.app/)
 - Source: [github.com/dadonec-boop/MK3-FR3D-Addon](https://github.com/dadonec-boop/MK3-FR3D-Addon)
