@@ -1169,10 +1169,14 @@ void thermal_runaway_protection(int *state, unsigned long *timer, float temperat
           manage_heater();
           lcd_update(false, false);
 
+#if BEEPER > -1
           WRITE(BEEPER,HIGH);
 	        delay(1000); //Änderunge 31.05.2020 5.Eichbaum
           WRITE(BEEPER,LOW);
           delay(500);
+#else
+          delay(1500);
+#endif
         }
       }
       break;
@@ -1220,6 +1224,7 @@ void disable_heater()
 
 void max_temp_error(uint8_t e) {
 
+#if BEEPER > -1
   WRITE(BEEPER,HIGH);
   delay(1000); //Änderunge 31.05.2020 5.Eichbaum
   WRITE(BEEPER,LOW);
@@ -1227,6 +1232,7 @@ void max_temp_error(uint8_t e) {
   WRITE(BEEPER,HIGH);
   delay(1000); //Änderunge 31.05.2020
   WRITE(BEEPER,LOW);
+#endif
 
   disable_heater();
   if(IsStopped() == false) {

@@ -65,6 +65,7 @@
 #include "ConfigurationStore.h"
 #include "fr3d_telemetry.h"
 #include "fr3d_gateway_id.h"
+#include "fr3d_lcd_remote.h"
 #include "language.h"
 #include "pins_arduino.h"
 #include "math.h"
@@ -256,6 +257,7 @@ unsigned long currentBeepMillis;
 
 void setBeepSequence(int bs[], int length)
 {
+#if BEEPER > -1
   if (length > maxBeepSequenceLength)
     length = maxBeepSequenceLength;
   for (int i = 0; i < length; i++)
@@ -266,11 +268,16 @@ void setBeepSequence(int bs[], int length)
   currentBeepMillis = millis();
 
   WRITE(BEEPER,HIGH);
-
+#else
+  (void)bs;
+  (void)length;
+  currentBeepSequenceIndex = -1;
+#endif
 }
 
 void beepSequenceLoop() {
 
+#if BEEPER > -1
   if (currentBeepSequenceIndex >= 0 && currentBeepSequenceIndex < currentBeepSequenceLength) {
 
     unsigned long elapsedMillis = millis() - currentBeepMillis;
@@ -289,6 +296,7 @@ void beepSequenceLoop() {
       }
     }
   }
+#endif
 
 
 }
@@ -717,6 +725,9 @@ void loop()
     }
   }
 
+#ifdef ULTRA_LCD
+  fr3d_lcd_remote_poll_click(&encoderClicked);
+#endif
 
   beepSequenceLoop();  
 
@@ -1960,9 +1971,17 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" GWCLR borrar MAC gateway (desconexion Pi)");
     SERIAL_ECHO_START;
-    SERIAL_ECHOLNPGM(" QUERY estado completo (R,T,F,PR,SW,SWmin,SWmid,SWmax,PRED*,ES)");
+    SERIAL_ECHOLNPGM(" QUERY estado completo (R,T,F,PR,SW,SWmin,SWmid,SWmax,PRED*,ES,LCDREM)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM("       mayus/minus indistinto");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" LCDQ  snapshot LCD remoto 4x20 (LCD,row,text,)");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" ENC+/ENC-  paso encoder menu remoto");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" ENCC  click encoder remoto");
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM(" LCDHWENC<0|1> encoder fisico OFF/ON (default 1, EEPROM)");
     SERIAL_ECHO_START;
     SERIAL_ECHOLNPGM(" R<X.X>  RPM extrusor 0-40 rpm");
     SERIAL_ECHO_START;
@@ -2154,9 +2173,95 @@ static bool process_fr3d_compact_line()
     SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMJDB,"); SERIAL_PROTOCOL_F(fr3d_diam_jump_debounce_mm, 4); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMJPM,"); SERIAL_PROTOCOL_F(fr3d_diam_pending_match_mm, 4); SERIAL_ECHOLNPGM(",");
     SERIAL_ECHO_START; SERIAL_ECHOPGM("DIAMDEBUG,"); SERIAL_ECHO((int)fr3d_diam_debug_csv_enabled); SERIAL_ECHOLNPGM(",");
+#ifdef ULTRA_LCD
+    SERIAL_ECHO_START; SERIAL_ECHOLNPGM("LCDREM,1,");
+    SERIAL_ECHO_START; SERIAL_ECHOPGM("LCDHWENC,"); SERIAL_ECHO((int)fr3d_lcd_hw_encoder); SERIAL_ECHOLNPGM(",");
+#endif
     SERIAL_ECHO_START; SERIAL_ECHOPGM("ES,"); SERIAL_ECHO((extrude_status & ES_ENABLE_SET) ? 1 : 0); SERIAL_ECHOLNPGM(",");
     return true;
   }
+
+#ifdef ULTRA_LCD
+  if (fr3d_cmd_word(p, "LCDQ")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err LCDQ extra");
+      return true;
+    }
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok LCDQ");
+    fr3d_lcd_remote_dump_lcdq();
+    return true;
+  }
+
+  if (fr3d_cmd_word(p, "ENC+")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err ENC+ extra");
+      return true;
+    }
+    fr3d_lcd_remote_enc_step(1);
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok ENC+");
+    return true;
+  }
+
+  if (fr3d_cmd_word(p, "ENC-")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err ENC- extra");
+      return true;
+    }
+    fr3d_lcd_remote_enc_step(-1);
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok ENC-");
+    return true;
+  }
+
+  if (fr3d_cmd_word(p, "ENCC")) {
+    char *r = p + 4;
+    while (*r == ' ' || *r == '\t') r++;
+    if (*r != '\0') {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err ENCC extra");
+      return true;
+    }
+    fr3d_lcd_remote_enc_click();
+    SERIAL_ECHO_START;
+    SERIAL_ECHOLNPGM("ok ENCC");
+    return true;
+  }
+
+  if (fr3d_cmd_prefix(p, "LCDHWENC")) {
+    long lv = 0;
+    if (!fr3d_parse_tail_long(p, 8, &lv) || (lv != 0 && lv != 1)) {
+      fr3d_compact_last_error = true;
+      SERIAL_ECHO_START;
+      SERIAL_ECHOLNPGM("err LCDHWENC");
+      return true;
+    }
+    const uint8_t prev = fr3d_lcd_hw_encoder;
+    fr3d_lcd_hw_encoder = (uint8_t)lv;
+#ifdef EEPROM_SETTINGS
+    if (prev != fr3d_lcd_hw_encoder)
+      Config_StoreSettings();
+#endif
+    SERIAL_ECHO_START;
+    SERIAL_ECHOPGM("ok LCDHWENC ");
+    SERIAL_ECHOLN((int)fr3d_lcd_hw_encoder);
+    return true;
+  }
+#endif
 
   if (fr3d_cmd_word(p, "START")) {
     char *r = p + 5;
