@@ -1,0 +1,17 @@
+key,value
+auto_connect,false
+mk3_link_mode,usb
+port_fr3d,
+port_fr3d_usb,
+port_fr3d_uart,/dev/serial0
+ui_line_label,Pi3 BDWidth bench
+ui_lang,en
+totem_enabled,false
+bdwidth_enabled,true
+bdwidth_port,auto
+bdwidth_baud,500000
+bdwidth_inject_mk3,false
+firebase_enabled,true
+firebase_database_url,https://fr3d-3889a-default-rtdb.firebaseio.com
+firebase_auth_email,gateway@fr3d-addon.internal
+firebase_auth_password,gateway

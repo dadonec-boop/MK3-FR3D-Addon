@@ -1,0 +1,21 @@
+[Unit]
+Description=FR3D first-boot identity (cloned SD / UNO Q factory image)
+Documentation=file:///home/pi/fr3d/control_python/python_gateway/deploy/first_boot_clone_fix.sh
+# Solo si aun no se personalizo esta unidad.
+ConditionPathExists=!/var/lib/fr3d/first-boot-clone-fix.done
+# Necesita dbus para hostnamectl (fallaba "Failed to connect to system scope bus").
+After=local-fs.target dbus.socket dbus.service systemd-machine-id-commit.service
+Wants=dbus.service
+Before=fr3d-gateway.service fr3d-setup.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 3
+ExecStart=/home/pi/fr3d/control_python/python_gateway/deploy/first_boot_clone_fix.sh --auto
+RemainAfterExit=yes
+TimeoutStartSec=180
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
